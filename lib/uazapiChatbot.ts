@@ -81,7 +81,8 @@ export interface UazapiFunction {
 export interface AgentConfigData {
   id?: string;
   tenant_id: string;
-  instance_id: string;
+  instance_id?: string; // Nullable para config global
+  is_global?: boolean;  // Se true, é config template
   name: string;
   provider: string;
   model: string;
@@ -656,6 +657,89 @@ export class AgentConfigService {
       .eq('id', configId);
 
     if (error) throw error;
+  }
+
+  // ========================================
+  // CONFIG GLOBAL (Centralizada pelo Owner)
+  // ========================================
+
+  // Obter configuração global (template para todos os clientes)
+  async getGlobalConfig(): Promise<AgentConfigData | null> {
+    const { data, error } = await supabase
+      .from('uazapi_agent_configs')
+      .select('*')
+      .eq('is_global', true)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  }
+
+  // Salvar configuração global
+  async upsertGlobalConfig(config: Omit<AgentConfigData, 'tenant_id' | 'instance_id'>): Promise<AgentConfigData> {
+    const tenantId = await this.getCurrentTenantId();
+
+    // Verificar se já existe config global
+    const existing = await this.getGlobalConfig();
+
+    const { data, error } = await supabase
+      .from('uazapi_agent_configs')
+      .upsert({
+        id: existing?.id,
+        ...config,
+        tenant_id: tenantId,
+        instance_id: null,
+        is_global: true,
+      }, {
+        onConflict: 'id',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Aplicar config global a uma instância específica (quando cliente conecta)
+  // NÃO altera instâncias existentes - apenas cria nova config para a instância
+  async applyGlobalToInstance(instanceId: string): Promise<AgentConfigData | null> {
+    // Buscar config global
+    const globalConfig = await this.getGlobalConfig();
+    if (!globalConfig) return null;
+
+    // Verificar se instância já tem config
+    const existingInstanceConfig = await this.getAgentConfigByInstance(instanceId);
+    if (existingInstanceConfig) {
+      // Instância já tem config, não sobrescrever
+      return existingInstanceConfig;
+    }
+
+    const tenantId = await this.getCurrentTenantId();
+
+    // Criar nova config para a instância baseada na global
+    const { data, error } = await supabase
+      .from('uazapi_agent_configs')
+      .insert({
+        tenant_id: tenantId,
+        instance_id: instanceId,
+        is_global: false,
+        name: globalConfig.name,
+        provider: globalConfig.provider,
+        model: globalConfig.model,
+        api_key_encrypted: (globalConfig as any).api_key_encrypted,
+        custom_instructions: globalConfig.custom_instructions,
+        temperature: globalConfig.temperature,
+        max_tokens: globalConfig.max_tokens,
+        audio_fallback_message: globalConfig.audio_fallback_message,
+        image_fallback_message: globalConfig.image_fallback_message,
+        transfer_on_image: globalConfig.transfer_on_image,
+        is_active: false, // Inicia desativado até cliente fazer upload de conhecimento
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   }
 }
 

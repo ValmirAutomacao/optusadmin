@@ -65,12 +65,21 @@ export function ChatbotConfigPanel({
 
     useEffect(() => {
         loadConfig();
-    }, [instanceId]);
+    }, [instanceId, isGlobal]);
 
     const loadConfig = async () => {
         try {
             setLoading(true);
-            const existing = await agentConfigService.getAgentConfigByInstance(instanceId);
+
+            let existing;
+            if (isGlobal) {
+                // Carregar config global
+                existing = await agentConfigService.getGlobalConfig();
+            } else {
+                // Carregar config da instância específica
+                existing = await agentConfigService.getAgentConfigByInstance(instanceId);
+            }
+
             if (existing) {
                 setConfig(existing);
                 setExistingConfig(existing);
@@ -85,14 +94,25 @@ export function ChatbotConfigPanel({
     const handleSave = async () => {
         try {
             setSaving(true);
-            const savedConfig = await agentConfigService.upsertAgentConfig({
-                ...config,
-                instance_id: instanceId,
-            } as any);
+
+            let savedConfig;
+            if (isGlobal) {
+                // Salvar como config global (sem instance_id)
+                savedConfig = await agentConfigService.upsertGlobalConfig({
+                    ...config,
+                    is_global: true,
+                } as any);
+            } else {
+                // Salvar config de instância específica
+                savedConfig = await agentConfigService.upsertAgentConfig({
+                    ...config,
+                    instance_id: instanceId,
+                } as any);
+            }
 
             setExistingConfig(savedConfig);
             onConfigChange?.(savedConfig);
-            alert('Configuração salva com sucesso!');
+            alert(isGlobal ? 'Configuração global salva com sucesso!' : 'Configuração salva com sucesso!');
         } catch (error) {
             console.error('Failed to save config:', error);
             alert('Erro ao salvar configuração');
@@ -321,15 +341,22 @@ export function ChatbotConfigPanel({
 
             {/* Botões de Ação */}
             <div className="flex justify-between">
-                <Button
-                    variant="secondary"
-                    onClick={handleSync}
-                    disabled={syncing || !existingConfig?.id}
-                    loading={syncing}
-                    icon="sync"
-                >
-                    Sincronizar com Uazapi
-                </Button>
+                {!isGlobal ? (
+                    <Button
+                        variant="secondary"
+                        onClick={handleSync}
+                        disabled={syncing || !existingConfig?.id}
+                        loading={syncing}
+                        icon="sync"
+                    >
+                        Sincronizar com Uazapi
+                    </Button>
+                ) : (
+                    <div className="text-sm text-gray-500 flex items-center gap-2">
+                        <span className="text-lg">💡</span>
+                        Esta config será aplicada a novas instâncias
+                    </div>
+                )}
 
                 <Button
                     onClick={handleSave}
@@ -337,7 +364,7 @@ export function ChatbotConfigPanel({
                     loading={saving}
                     icon="save"
                 >
-                    Salvar Configuração
+                    {isGlobal ? 'Salvar Config Global' : 'Salvar Configuração'}
                 </Button>
             </div>
         </div>
