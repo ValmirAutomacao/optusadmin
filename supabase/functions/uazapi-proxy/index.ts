@@ -93,7 +93,13 @@ serve(async (req) => {
         const uazapiUrl = `${UAZAPI_BASE_URL}${path}`
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${uazapiToken}`,
+        }
+
+        // Autenticação: admintoken para endpoints admin, token para instância
+        if (ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))) {
+            headers['admintoken'] = UAZAPI_ADMIN_TOKEN
+        } else {
+            headers['token'] = uazapiToken
         }
 
         const options: RequestInit = {
