@@ -15,6 +15,7 @@ const ADMIN_ENDPOINTS = [
     '/instance/all',
     '/instance/create',
     '/instance/delete',
+    '/instance/init', // Criar nova instância usa admin token
 ]
 
 serve(async (req) => {
