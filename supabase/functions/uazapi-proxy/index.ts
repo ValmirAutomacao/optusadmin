@@ -15,7 +15,7 @@ const ADMIN_ENDPOINTS = [
     '/instance/all',
     '/instance/create',
     '/instance/delete',
-    '/instance/init', // Criar nova instância usa admin token
+    '/instance/init', // Criar instância requer admin token
 ]
 
 serve(async (req) => {
@@ -93,13 +93,7 @@ serve(async (req) => {
         const uazapiUrl = `${UAZAPI_BASE_URL}${path}`
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-        }
-
-        // Autenticação: admintoken para endpoints admin, token para instância
-        if (ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))) {
-            headers['admintoken'] = UAZAPI_ADMIN_TOKEN
-        } else {
-            headers['token'] = uazapiToken
+            'Authorization': `Bearer ${uazapiToken}`,
         }
 
         const options: RequestInit = {
