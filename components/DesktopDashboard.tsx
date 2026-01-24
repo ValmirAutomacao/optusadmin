@@ -27,11 +27,8 @@ const DesktopDashboard: React.FC = () => {
     orderBy: { column: 'created_at', ascending: false }
   });
 
-  const { data: agendamentos } = useTenantQuery({
-    table: 'agendamentos',
-    select: 'id, data_agendamento, status, hora_agendamento',
-    orderBy: { column: 'data_agendamento', ascending: true }
-  });
+  // Query de agendamentos removida temporariamente - coluna hora_agendamento não existe
+  const agendamentos: any[] = [];
 
   const profissionaisAtivos = profissionais?.filter(p => p.active) || [];
   const servicosAtivos = servicos?.filter(s => s.active) || [];

@@ -5,62 +5,56 @@
 
 import { supabase } from './supabase';
 
-const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY || 're_bo83LJtK_ErAJ2zyePXAwHiHAgZuFcc98';
 const EMAIL_FROM = 'OptusAdmin <noreply@optuagentiasaas.shop>';
-const APP_URL = import.meta.env.VITE_APP_URL || 'https://optusadmin.vercel.app';
+const APP_URL = import.meta.env.VITE_APP_URL || 'https://www.optuagentiasaas.shop';
 
 export interface OnboardingData {
-    tenantId: string;
-    email: string;
-    name: string;
-    role: 'manager' | 'collaborator' | 'professional';
-    token: string;
+  tenantId: string;
+  email: string;
+  name: string;
+  role: 'manager' | 'collaborator' | 'professional';
+  token: string;
 }
 
 /**
- * Envia email de boas-vindas via Resend
+ * Envia email via Edge Function (evita CORS)
  */
 async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
-    try {
-        const response = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${RESEND_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                from: EMAIL_FROM,
-                to: [to],
-                subject,
-                html
-            })
-        });
+  try {
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: {
+        to,
+        subject,
+        html,
+        from: EMAIL_FROM
+      }
+    });
 
-        if (!response.ok) {
-            const error = await response.text();
-            console.error('Erro ao enviar email:', error);
-            return false;
-        }
-
-        return true;
-    } catch (error) {
-        console.error('Erro ao enviar email:', error);
-        return false;
+    if (error) {
+      console.error('Erro ao enviar email via Edge Function:', error);
+      return false;
     }
+
+    console.log('Email enviado com sucesso:', data);
+    return data?.success === true;
+  } catch (error) {
+    console.error('Erro ao enviar email:', error);
+    return false;
+  }
 }
 
 /**
  * Envia email de onboarding para gestor de tenant
  */
 export async function sendManagerOnboardingEmail(data: {
-    tenantName: string;
-    managerName: string;
-    managerEmail: string;
-    token: string;
+  tenantName: string;
+  managerName: string;
+  managerEmail: string;
+  token: string;
 }): Promise<boolean> {
-    const onboardingUrl = `${APP_URL}/onboarding/manager?token=${data.token}`;
+  const onboardingUrl = `${APP_URL}/onboarding/manager?token=${data.token}`;
 
-    const html = `
+  const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -99,36 +93,36 @@ export async function sendManagerOnboardingEmail(data: {
     </html>
   `;
 
-    const sent = await sendEmail(
-        data.managerEmail,
-        `🎉 Bem-vindo ao OptusAdmin - ${data.tenantName}`,
-        html
-    );
+  const sent = await sendEmail(
+    data.managerEmail,
+    `🎉 Bem-vindo ao OptusAdmin - ${data.tenantName}`,
+    html
+  );
 
-    if (sent) {
-        // Atualiza data de envio
-        await supabase
-            .from('tenants')
-            .update({ onboarding_sent_at: new Date().toISOString() })
-            .eq('onboarding_token', data.token);
-    }
+  if (sent) {
+    // Atualiza data de envio
+    await supabase
+      .from('tenants')
+      .update({ onboarding_sent_at: new Date().toISOString() })
+      .eq('onboarding_token', data.token);
+  }
 
-    return sent;
+  return sent;
 }
 
 /**
  * Envia email de onboarding para colaborador
  */
 export async function sendCollaboratorOnboardingEmail(data: {
-    tenantName: string;
-    name: string;
-    email: string;
-    role: string;
-    token: string;
+  tenantName: string;
+  name: string;
+  email: string;
+  role: string;
+  token: string;
 }): Promise<boolean> {
-    const onboardingUrl = `${APP_URL}/onboarding/collaborator?token=${data.token}`;
+  const onboardingUrl = `${APP_URL}/onboarding/collaborator?token=${data.token}`;
 
-    const html = `
+  const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -167,22 +161,22 @@ export async function sendCollaboratorOnboardingEmail(data: {
     </html>
   `;
 
-    return sendEmail(data.email, `👋 Convite para ${data.tenantName}`, html);
+  return sendEmail(data.email, `👋 Convite para ${data.tenantName}`, html);
 }
 
 /**
  * Envia email de onboarding para profissional
  */
 export async function sendProfessionalOnboardingEmail(data: {
-    tenantName: string;
-    name: string;
-    email: string;
-    specialty: string;
-    token: string;
+  tenantName: string;
+  name: string;
+  email: string;
+  specialty: string;
+  token: string;
 }): Promise<boolean> {
-    const onboardingUrl = `${APP_URL}/onboarding/professional?token=${data.token}`;
+  const onboardingUrl = `${APP_URL}/onboarding/professional?token=${data.token}`;
 
-    const html = `
+  const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -221,102 +215,102 @@ export async function sendProfessionalOnboardingEmail(data: {
     </html>
   `;
 
-    return sendEmail(data.email, `🩺 Acesso Profissional - ${data.tenantName}`, html);
+  return sendEmail(data.email, `🩺 Acesso Profissional - ${data.tenantName}`, html);
 }
 
 /**
  * Valida token de onboarding
  */
 export async function validateOnboardingToken(
-    token: string,
-    type: 'manager' | 'collaborator' | 'professional'
+  token: string,
+  type: 'manager' | 'collaborator' | 'professional'
 ): Promise<{ valid: boolean; data?: Record<string, unknown> }> {
-    let table = '';
+  let table = '';
 
-    switch (type) {
-        case 'manager':
-            table = 'tenants';
-            break;
-        case 'collaborator':
-            table = 'collaborators';
-            break;
-        case 'professional':
-            table = 'professionals';
-            break;
-    }
+  switch (type) {
+    case 'manager':
+      table = 'tenants';
+      break;
+    case 'collaborator':
+      table = 'collaborators';
+      break;
+    case 'professional':
+      table = 'professionals';
+      break;
+  }
 
-    const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .eq('onboarding_token', token)
-        .eq('onboarding_completed', false)
-        .single();
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+    .eq('onboarding_token', token)
+    .eq('onboarding_completed', false)
+    .single();
 
-    if (error || !data) {
-        return { valid: false };
-    }
+  if (error || !data) {
+    return { valid: false };
+  }
 
-    return { valid: true, data };
+  return { valid: true, data };
 }
 
 /**
  * Completa o onboarding criando usuário no auth
  */
 export async function completeOnboarding(data: {
-    token: string;
-    type: 'manager' | 'collaborator' | 'professional';
-    password: string;
+  token: string;
+  type: 'manager' | 'collaborator' | 'professional';
+  password: string;
 }): Promise<{ success: boolean; error?: string }> {
-    // Validar token
-    const validation = await validateOnboardingToken(data.token, data.type);
+  // Validar token
+  const validation = await validateOnboardingToken(data.token, data.type);
 
-    if (!validation.valid || !validation.data) {
-        return { success: false, error: 'Token inválido ou expirado' };
+  if (!validation.valid || !validation.data) {
+    return { success: false, error: 'Token inválido ou expirado' };
+  }
+
+  const record = validation.data;
+  const email = data.type === 'manager'
+    ? (record.manager_email as string)
+    : (record.email as string);
+
+  // Criar usuário no auth
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password: data.password,
+    options: {
+      data: {
+        name: data.type === 'manager' ? record.manager_name : record.name,
+        role: data.type,
+        tenant_id: data.type === 'manager' ? record.id : record.tenant_id
+      }
     }
+  });
 
-    const record = validation.data;
-    const email = data.type === 'manager'
-        ? (record.manager_email as string)
-        : (record.email as string);
+  if (authError) {
+    return { success: false, error: authError.message };
+  }
 
-    // Criar usuário no auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password: data.password,
-        options: {
-            data: {
-                name: data.type === 'manager' ? record.manager_name : record.name,
-                role: data.type,
-                tenant_id: data.type === 'manager' ? record.id : record.tenant_id
-            }
-        }
-    });
+  // Atualizar registro
+  let table = '';
+  switch (data.type) {
+    case 'manager': table = 'tenants'; break;
+    case 'collaborator': table = 'collaborators'; break;
+    case 'professional': table = 'professionals'; break;
+  }
 
-    if (authError) {
-        return { success: false, error: authError.message };
-    }
+  const updateData: Record<string, unknown> = {
+    onboarding_completed: true,
+    status: 'active'
+  };
 
-    // Atualizar registro
-    let table = '';
-    switch (data.type) {
-        case 'manager': table = 'tenants'; break;
-        case 'collaborator': table = 'collaborators'; break;
-        case 'professional': table = 'professionals'; break;
-    }
+  if (authData.user) {
+    updateData.auth_id = authData.user.id;
+  }
 
-    const updateData: Record<string, unknown> = {
-        onboarding_completed: true,
-        status: 'active'
-    };
+  await supabase
+    .from(table)
+    .update(updateData)
+    .eq('onboarding_token', data.token);
 
-    if (authData.user) {
-        updateData.auth_id = authData.user.id;
-    }
-
-    await supabase
-        .from(table)
-        .update(updateData)
-        .eq('onboarding_token', data.token);
-
-    return { success: true };
+  return { success: true };
 }
