@@ -12,6 +12,7 @@ import Usuarios from '../pages/Usuarios';
 import Whatsapp from '../pages/Whatsapp';
 import MvpManagement from '../pages/MvpManagement';
 import Conhecimento from '../pages/Conhecimento';
+import ManagerOnboarding from '../pages/ManagerOnboarding';
 
 const AppRoutes: React.FC = () => {
   const [isMobile, setIsMobile] = React.useState<boolean>(false);
@@ -31,6 +32,9 @@ const AppRoutes: React.FC = () => {
       <TenantProvider>
         <Router>
           <Routes>
+            {/* Rotas públicas de Onboarding (sem autenticação) */}
+            <Route path="/onboarding/manager" element={<ManagerOnboarding />} />
+
             {/* Dashboard - Acesso para todos os usuários logados */}
             <Route
               path="/"

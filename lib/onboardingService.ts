@@ -255,6 +255,9 @@ export async function validateOnboardingToken(
 
 /**
  * Completa o onboarding criando usuário no auth
+ * NOTA: A confirmação de email do Supabase deve estar DESABILITADA nas configurações
+ * do projeto ou configurada com "Confirm email = false" para este fluxo funcionar
+ * sem enviar email de confirmação adicional.
  */
 export async function completeOnboarding(data: {
   token: string;
@@ -272,16 +275,23 @@ export async function completeOnboarding(data: {
   const email = data.type === 'manager'
     ? (record.manager_email as string)
     : (record.email as string);
+  const name = data.type === 'manager'
+    ? (record.manager_name as string)
+    : (record.name as string);
+  const tenantId = data.type === 'manager'
+    ? (record.id as string)
+    : (record.tenant_id as string);
 
-  // Criar usuário no auth
+  // Criar usuário no auth (sem confirmação de email adicional)
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
     password: data.password,
     options: {
+      emailRedirectTo: `${APP_URL}/`, // Redireciona para login após confirmação se necessário
       data: {
-        name: data.type === 'manager' ? record.manager_name : record.name,
-        role: data.type,
-        tenant_id: data.type === 'manager' ? record.id : record.tenant_id
+        name,
+        role: data.type === 'manager' ? 'admin' : data.type,
+        tenant_id: tenantId
       }
     }
   });
@@ -290,7 +300,29 @@ export async function completeOnboarding(data: {
     return { success: false, error: authError.message };
   }
 
-  // Atualizar registro
+  // Se não confirmou automaticamente, ainda pode funcionar dependendo das configs do Supabase
+  if (!authData.user) {
+    return { success: false, error: 'Erro ao criar usuário. Verifique as configurações de confirmação de email.' };
+  }
+
+  // Criar perfil de usuário na tabela user_profiles
+  const { error: profileError } = await supabase
+    .from('user_profiles')
+    .insert({
+      auth_id: authData.user.id,
+      tenant_id: tenantId,
+      email: email,
+      name: name,
+      role: data.type === 'manager' ? 'admin' : data.type,
+      status: 'active'
+    });
+
+  if (profileError) {
+    console.error('Erro ao criar perfil:', profileError);
+    // Não retorna erro, pois o usuário foi criado no auth
+  }
+
+  // Atualizar registro de onboarding
   let table = '';
   switch (data.type) {
     case 'manager': table = 'tenants'; break;
@@ -298,18 +330,13 @@ export async function completeOnboarding(data: {
     case 'professional': table = 'professionals'; break;
   }
 
-  const updateData: Record<string, unknown> = {
-    onboarding_completed: true,
-    status: 'active'
-  };
-
-  if (authData.user) {
-    updateData.auth_id = authData.user.id;
-  }
-
   await supabase
     .from(table)
-    .update(updateData)
+    .update({
+      onboarding_completed: true,
+      status: 'active',
+      auth_id: authData.user.id
+    })
     .eq('onboarding_token', data.token);
 
   return { success: true };
