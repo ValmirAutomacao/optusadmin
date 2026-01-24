@@ -1,11 +1,12 @@
 // Integração com API Uazapi para gerenciamento de instâncias WhatsApp
+// Usa Edge Function como proxy para proteger o ADMIN_TOKEN
 import { supabase } from './supabase'
 import { InstanceProtectionService, CRITICAL_INSTANCE_ID } from './instanceProtection'
 import { ConnectionLimitService } from './connectionLimits'
 
-// Configurações da API Uazapi (usando variáveis de ambiente)
-const UAZAPI_BASE_URL = import.meta.env.VITE_UAZAPI_BASE_URL || 'https://optus.uazapi.com'
-const UAZAPI_ADMIN_TOKEN = import.meta.env.VITE_UAZAPI_ADMIN_TOKEN || '0TzblrcqZ04deiwH2kgLapvZuaI6fRws4sBba2E1Nwlw3rK2j4'
+// URL do proxy Supabase Edge Function
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const UAZAPI_PROXY_URL = `${SUPABASE_URL}/functions/v1/uazapi-proxy`
 
 // Types para API Uazapi
 interface UazapiInstance {
@@ -51,41 +52,43 @@ interface SendMessageRequest {
   mediaUrl?: string
 }
 
-// Classe principal para integração
+// Classe principal para integração via proxy
 export class UazapiService {
-  private baseUrl: string
-  private adminToken: string
+  private proxyUrl: string
 
   constructor() {
-    this.baseUrl = UAZAPI_BASE_URL
-    this.adminToken = UAZAPI_ADMIN_TOKEN
+    this.proxyUrl = UAZAPI_PROXY_URL
   }
 
-  // Headers padrão para requisições administrativas
-  private getAdminHeaders(): Record<string, string> {
+  // Obter token de autenticação do Supabase
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      throw new Error('Usuário não autenticado')
+    }
     return {
       'Content-Type': 'application/json',
-      'admintoken': this.adminToken
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
     }
   }
 
-  // Headers para requisições com token da instância
-  private getInstanceHeaders(token: string): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      'token': token
-    }
-  }
-
-  // Fazer requisições HTTP com tratamento de erro
+  // Fazer requisições via proxy
   private async makeRequest<T>(
     endpoint: string,
     method: 'GET' | 'POST' | 'DELETE' = 'GET',
-    headers: Record<string, string> = {},
-    body?: any
+    body?: any,
+    instanceToken?: string
   ): Promise<T> {
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      const headers = await this.getAuthHeaders()
+
+      // Adicionar token da instância se fornecido
+      if (instanceToken) {
+        headers['x-instance-token'] = instanceToken
+      }
+
+      const response = await fetch(`${this.proxyUrl}${endpoint}`, {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined
@@ -103,13 +106,13 @@ export class UazapiService {
     }
   }
 
-  // 1. Criar nova instância
+  // 1. Criar nova instância (usa ADMIN_TOKEN via proxy)
   async createInstance(data: CreateInstanceRequest): Promise<UazapiInstance> {
     const response = await this.makeRequest<{
       instance: UazapiInstance
       token: string
       response: string
-    }>('/instance/init', 'POST', this.getAdminHeaders(), data)
+    }>('/instance/init', 'POST', data)
 
     console.log('Resposta createInstance:', JSON.stringify(response, null, 2))
 
@@ -136,8 +139,8 @@ export class UazapiService {
     return await this.makeRequest(
       '/instance/connect',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      data
+      data,
+      instanceToken
     )
   }
 
@@ -153,7 +156,8 @@ export class UazapiService {
     return await this.makeRequest(
       '/instance/status',
       'GET',
-      this.getInstanceHeaders(instanceToken)
+      undefined,
+      instanceToken
     )
   }
 
@@ -162,14 +166,14 @@ export class UazapiService {
     return await this.makeRequest(
       '/webhook',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      config
+      config,
+      instanceToken
     )
   }
 
-  // 5. Listar todas as instâncias (admin)
+  // 5. Listar todas as instâncias (usa ADMIN_TOKEN via proxy)
   async listAllInstances(): Promise<UazapiInstance[]> {
-    return await this.makeRequest('/instance/all', 'GET', this.getAdminHeaders())
+    return await this.makeRequest('/instance/all', 'GET')
   }
 
   // 6. Deletar instância (COM PROTEÇÃO!)
@@ -183,7 +187,8 @@ export class UazapiService {
       () => this.makeRequest(
         '/instance',
         'DELETE',
-        this.getInstanceHeaders(instanceToken)
+        undefined,
+        instanceToken
       )
     );
   }
@@ -193,7 +198,8 @@ export class UazapiService {
     return await this.makeRequest(
       '/instance/disconnect',
       'POST',
-      this.getInstanceHeaders(instanceToken)
+      undefined,
+      instanceToken
     )
   }
 
@@ -210,8 +216,8 @@ export class UazapiService {
     return await this.makeRequest(
       endpoint,
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      payload
+      payload,
+      instanceToken
     )
   }
 }

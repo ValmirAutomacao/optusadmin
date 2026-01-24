@@ -1,11 +1,12 @@
 // Integração com recursos de Chatbot IA da API Uazapi
 // Gerencia agentes, conhecimento (RAG), triggers e funções
+// Usa Edge Function como proxy para proteger tokens
 
 import { supabase } from './supabase';
 
-// Declaração de tipo para Vite env
-declare const __UAZAPI_BASE_URL__: string | undefined;
-const UAZAPI_BASE_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_UAZAPI_BASE_URL) || 'https://optus.uazapi.com';
+// URL do proxy Supabase Edge Function
+const SUPABASE_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) || '';
+const UAZAPI_PROXY_URL = `${SUPABASE_URL}/functions/v1/uazapi-proxy`;
 
 // ========================================
 // Types - API Uazapi Chatbot
@@ -108,32 +109,42 @@ export interface KnowledgeData {
 }
 
 // ========================================
-// UazapiChatbotService - Gerencia sincronização
+// UazapiChatbotService - Gerencia sincronização via proxy
 // ========================================
 
 export class UazapiChatbotService {
-  private baseUrl: string;
+  private proxyUrl: string;
 
   constructor() {
-    this.baseUrl = UAZAPI_BASE_URL;
+    this.proxyUrl = UAZAPI_PROXY_URL;
   }
 
-  // Headers para requisições com token da instância
-  private getInstanceHeaders(token: string): Record<string, string> {
+  // Obter token de autenticação do Supabase
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('Usuário não autenticado');
+    }
     return {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || ''
     };
   }
 
-  // Fazer requisição HTTP com tratamento de erro
+  // Fazer requisição via proxy
   private async makeRequest<T>(
     endpoint: string,
     method: 'GET' | 'POST' | 'DELETE' = 'GET',
-    headers: Record<string, string> = {},
-    body?: any
+    body?: any,
+    instanceToken?: string
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
+    const headers = await this.getAuthHeaders();
+
+    // Adicionar token da instância se fornecido
+    if (instanceToken) {
+      headers['x-instance-token'] = instanceToken;
+    }
 
     const options: RequestInit = {
       method,
@@ -144,7 +155,7 @@ export class UazapiChatbotService {
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, options);
+    const response = await fetch(`${this.proxyUrl}${endpoint}`, options);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -163,7 +174,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiAgent[]>(
       '/agent/list',
       'GET',
-      this.getInstanceHeaders(instanceToken)
+      undefined,
+      instanceToken
     );
   }
 
@@ -172,8 +184,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiAgent>(
       '/agent/edit',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      agent
+      agent,
+      instanceToken
     );
   }
 
@@ -182,8 +194,8 @@ export class UazapiChatbotService {
     await this.makeRequest(
       '/agent/delete',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      { id: agentId }
+      { id: agentId },
+      instanceToken
     );
   }
 
@@ -196,7 +208,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiKnowledge[]>(
       '/knowledge/list',
       'GET',
-      this.getInstanceHeaders(instanceToken)
+      undefined,
+      instanceToken
     );
   }
 
@@ -205,8 +218,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiKnowledge>(
       '/knowledge/edit',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      knowledge
+      knowledge,
+      instanceToken
     );
   }
 
@@ -215,8 +228,8 @@ export class UazapiChatbotService {
     await this.makeRequest(
       '/knowledge/delete',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      { id: knowledgeId }
+      { id: knowledgeId },
+      instanceToken
     );
   }
 
@@ -229,7 +242,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiTrigger[]>(
       '/trigger/list',
       'GET',
-      this.getInstanceHeaders(instanceToken)
+      undefined,
+      instanceToken
     );
   }
 
@@ -238,8 +252,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiTrigger>(
       '/trigger/edit',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      trigger
+      trigger,
+      instanceToken
     );
   }
 
@@ -248,8 +262,8 @@ export class UazapiChatbotService {
     await this.makeRequest(
       '/trigger/delete',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      { id: triggerId }
+      { id: triggerId },
+      instanceToken
     );
   }
 
@@ -262,7 +276,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiFunction[]>(
       '/function/list',
       'GET',
-      this.getInstanceHeaders(instanceToken)
+      undefined,
+      instanceToken
     );
   }
 
@@ -271,8 +286,8 @@ export class UazapiChatbotService {
     return this.makeRequest<UazapiFunction>(
       '/function/edit',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      func
+      func,
+      instanceToken
     );
   }
 
@@ -281,8 +296,8 @@ export class UazapiChatbotService {
     await this.makeRequest(
       '/function/delete',
       'POST',
-      this.getInstanceHeaders(instanceToken),
-      { id: functionId }
+      { id: functionId },
+      instanceToken
     );
   }
 
