@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Layout from '../components/Layout';
 import DesktopDashboard from '../components/DesktopDashboard';
 import MobilePWA from '../components/MobilePWA';
 
@@ -7,7 +8,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
+      setIsMobile(window.innerWidth < 768);
     };
 
     handleResize();
@@ -15,10 +16,16 @@ const Dashboard: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Mobile: render MobilePWA without Layout (fullscreen PWA experience)
+  // Desktop: render DesktopDashboard inside Layout (with sidebar)
+  if (isMobile) {
+    return <MobilePWA />;
+  }
+
   return (
-    <div className="min-h-screen">
-      {isMobile ? <MobilePWA /> : <DesktopDashboard />}
-    </div>
+    <Layout>
+      <DesktopDashboard />
+    </Layout>
   );
 };
 
