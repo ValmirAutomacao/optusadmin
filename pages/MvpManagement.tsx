@@ -223,6 +223,8 @@ function ClientesTab({
 
 function TenantCard({ tenant, onRefresh }: { tenant: Tenant; onRefresh: () => void }) {
     const [resending, setResending] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [showEditForm, setShowEditForm] = useState(false);
 
     async function resendOnboarding() {
         if (!tenant.manager_email) return;
@@ -246,6 +248,43 @@ function TenantCard({ tenant, onRefresh }: { tenant: Tenant; onRefresh: () => vo
 
         setResending(false);
         onRefresh();
+    }
+
+    async function handleDelete() {
+        if (!confirm(`Tem certeza que deseja excluir a empresa "${tenant.name}"?\n\nEsta ação não pode ser desfeita.`)) {
+            return;
+        }
+
+        setDeleting(true);
+
+        // Primeiro, limpar dados relacionados
+        await supabase.from('user_profiles').delete().eq('tenant_id', tenant.id);
+        await supabase.from('professionals').delete().eq('tenant_id', tenant.id);
+        await supabase.from('servicos').delete().eq('tenant_id', tenant.id);
+        await supabase.from('clientes').delete().eq('tenant_id', tenant.id);
+
+        // Então, excluir o tenant
+        const { error } = await supabase
+            .from('tenants')
+            .delete()
+            .eq('id', tenant.id);
+
+        if (error) {
+            alert('Erro ao excluir: ' + error.message);
+        }
+
+        setDeleting(false);
+        onRefresh();
+    }
+
+    if (showEditForm) {
+        return (
+            <TenantEditForm
+                tenant={tenant}
+                onClose={() => setShowEditForm(false)}
+                onSaved={() => { setShowEditForm(false); onRefresh(); }}
+            />
+        );
     }
 
     return (
@@ -282,17 +321,118 @@ function TenantCard({ tenant, onRefresh }: { tenant: Tenant; onRefresh: () => vo
                     <p>👤 {tenant.manager_name}</p>
                     <p>📧 {tenant.manager_email}</p>
                 </div>
-                {!tenant.onboarding_completed && (
+                <div className="flex gap-2">
                     <Button
                         variant="secondary"
                         size="sm"
-                        loading={resending}
-                        onClick={resendOnboarding}
+                        onClick={() => setShowEditForm(true)}
                     >
-                        📨 Reenviar Email
+                        ✏️ Editar
                     </Button>
-                )}
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={deleting}
+                        onClick={handleDelete}
+                        className="!text-red-600 hover:!bg-red-50"
+                    >
+                        🗑️ Excluir
+                    </Button>
+                    {!tenant.onboarding_completed && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={resending}
+                            onClick={resendOnboarding}
+                        >
+                            📨 Reenviar
+                        </Button>
+                    )}
+                </div>
             </div>
+        </div>
+    );
+}
+
+// Formulário de edição de Tenant
+function TenantEditForm({ tenant, onClose, onSaved }: { tenant: Tenant; onClose: () => void; onSaved: () => void }) {
+    const [saving, setSaving] = useState(false);
+    const [formData, setFormData] = useState({
+        name: tenant.name || '',
+        segment: tenant.segment || '',
+        managerName: tenant.manager_name || '',
+        managerEmail: tenant.manager_email || '',
+    });
+
+    async function handleSubmit(e: React.FormEvent) {
+        e.preventDefault();
+
+        if (!formData.name || !formData.managerName || !formData.managerEmail) {
+            alert('Preencha todos os campos obrigatórios');
+            return;
+        }
+
+        setSaving(true);
+
+        const { error } = await supabase
+            .from('tenants')
+            .update({
+                name: formData.name,
+                segment: formData.segment,
+                manager_name: formData.managerName,
+                manager_email: formData.managerEmail,
+            })
+            .eq('id', tenant.id);
+
+        if (error) {
+            alert('Erro ao atualizar: ' + error.message);
+            setSaving(false);
+            return;
+        }
+
+        setSaving(false);
+        onSaved();
+    }
+
+    return (
+        <div className="border-2 border-indigo-300 rounded-xl p-4 bg-indigo-50">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold">Editar: {tenant.name}</h3>
+                <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <Input
+                    label="Nome da Empresa *"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                    label="Segmento"
+                    value={formData.segment}
+                    onChange={(e) => setFormData(prev => ({ ...prev, segment: e.target.value }))}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                    <Input
+                        label="Nome do Gestor *"
+                        value={formData.managerName}
+                        onChange={(e) => setFormData(prev => ({ ...prev, managerName: e.target.value }))}
+                    />
+                    <Input
+                        label="Email do Gestor *"
+                        type="email"
+                        value={formData.managerEmail}
+                        onChange={(e) => setFormData(prev => ({ ...prev, managerEmail: e.target.value }))}
+                    />
+                </div>
+                <div className="flex gap-2 justify-end">
+                    <Button type="button" variant="secondary" onClick={onClose}>
+                        Cancelar
+                    </Button>
+                    <Button type="submit" loading={saving}>
+                        💾 Salvar
+                    </Button>
+                </div>
+            </form>
         </div>
     );
 }
