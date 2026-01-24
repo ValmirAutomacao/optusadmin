@@ -5,7 +5,7 @@
 
 import { supabase } from './supabase';
 
-const EMAIL_FROM = 'OptusAdmin <noreply@optuagentiasaas.shop>';
+const EMAIL_FROM = 'OptusAdmin <admin@mail.optuagentiasaas.shop>';
 const APP_URL = import.meta.env.VITE_APP_URL || 'https://www.optuagentiasaas.shop';
 
 export interface OnboardingData {
