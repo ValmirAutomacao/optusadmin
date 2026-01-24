@@ -40,8 +40,8 @@ Deno.serve(async (req: Request) => {
             );
         }
 
-        // Default from address (usando subdomain mail conforme recomendação Resend)
-        const from = body.from || 'OptusAdmin <admin@mail.optuagentiasaas.shop>';
+        // Default from address (usando admin@ ao invés de noreply@)
+        const from = body.from || 'OptusAdmin <admin@optuagentiasaas.shop>';
 
         // Send email via Resend
         const resendResponse = await fetch('https://api.resend.com/emails', {
