@@ -254,10 +254,8 @@ export async function validateOnboardingToken(
 }
 
 /**
- * Completa o onboarding criando usuário no auth
- * NOTA: A confirmação de email do Supabase deve estar DESABILITADA nas configurações
- * do projeto ou configurada com "Confirm email = false" para este fluxo funcionar
- * sem enviar email de confirmação adicional.
+ * Completa o onboarding criando usuário já confirmado via Edge Function
+ * Usa Admin API para bypass do email de confirmação do Supabase
  */
 export async function completeOnboarding(data: {
   token: string;
@@ -282,44 +280,24 @@ export async function completeOnboarding(data: {
     ? (record.id as string)
     : (record.tenant_id as string);
 
-  // Criar usuário no auth (sem confirmação de email adicional)
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password: data.password,
-    options: {
-      emailRedirectTo: `${APP_URL}/`, // Redireciona para login após confirmação se necessário
-      data: {
-        name,
-        role: data.type === 'manager' ? 'admin' : data.type,
-        tenant_id: tenantId
-      }
+  // Criar usuário via Edge Function (Admin API - já confirmado, sem email adicional)
+  const { data: createResult, error: createError } = await supabase.functions.invoke('create-user', {
+    body: {
+      email,
+      password: data.password,
+      name,
+      role: data.type === 'manager' ? 'admin' : data.type,
+      tenant_id: tenantId
     }
   });
 
-  if (authError) {
-    return { success: false, error: authError.message };
+  if (createError) {
+    console.error('Erro ao criar usuário via Edge Function:', createError);
+    return { success: false, error: createError.message || 'Erro ao criar usuário' };
   }
 
-  // Se não confirmou automaticamente, ainda pode funcionar dependendo das configs do Supabase
-  if (!authData.user) {
-    return { success: false, error: 'Erro ao criar usuário. Verifique as configurações de confirmação de email.' };
-  }
-
-  // Criar perfil de usuário na tabela users
-  const { error: profileError } = await supabase
-    .from('users')
-    .insert({
-      auth_id: authData.user.id,
-      tenant_id: tenantId,
-      email: email,
-      name: name,
-      role: data.type === 'manager' ? 'admin' : data.type,
-      status: 'active'
-    });
-
-  if (profileError) {
-    console.error('Erro ao criar perfil:', profileError);
-    // Não retorna erro, pois o usuário foi criado no auth
+  if (!createResult?.success) {
+    return { success: false, error: createResult?.error || 'Erro ao criar usuário' };
   }
 
   // Atualizar registro de onboarding
@@ -335,7 +313,7 @@ export async function completeOnboarding(data: {
     .update({
       onboarding_completed: true,
       status: 'active',
-      auth_id: authData.user.id
+      auth_id: createResult.user_id
     })
     .eq('onboarding_token', data.token);
 
