@@ -305,9 +305,9 @@ export async function completeOnboarding(data: {
     return { success: false, error: 'Erro ao criar usuário. Verifique as configurações de confirmação de email.' };
   }
 
-  // Criar perfil de usuário na tabela user_profiles
+  // Criar perfil de usuário na tabela users
   const { error: profileError } = await supabase
-    .from('user_profiles')
+    .from('users')
     .insert({
       auth_id: authData.user.id,
       tenant_id: tenantId,

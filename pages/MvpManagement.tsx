@@ -258,7 +258,7 @@ function TenantCard({ tenant, onRefresh }: { tenant: Tenant; onRefresh: () => vo
         setDeleting(true);
 
         // Primeiro, limpar dados relacionados
-        await supabase.from('user_profiles').delete().eq('tenant_id', tenant.id);
+        await supabase.from('users').delete().eq('tenant_id', tenant.id);
         await supabase.from('professionals').delete().eq('tenant_id', tenant.id);
         await supabase.from('servicos').delete().eq('tenant_id', tenant.id);
         await supabase.from('clientes').delete().eq('tenant_id', tenant.id);
