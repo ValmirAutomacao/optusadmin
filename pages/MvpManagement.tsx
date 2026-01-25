@@ -156,6 +156,7 @@ export default function MvpManagement() {
                         />
                     )}
                     {activeTab === 'chatbot' && (
+                        <div className="space-y-4">
                             <ChatbotConfigPanel
                                 instanceId="global"
                                 instanceName="Configuração Global"
@@ -171,8 +172,8 @@ export default function MvpManagement() {
                             </div>
                         </div>
                     )}
+                </div>
             </div>
-        </div>
         </Layout >
     );
 }
