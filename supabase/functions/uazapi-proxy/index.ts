@@ -10,7 +10,7 @@ const corsHeaders = {
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 }
 
-// Endpoints que requerem ADMIN_TOKEN
+// Endpoints que requerem ADMIN_TOKEN (conforme OpenAPI)
 const ADMIN_ENDPOINTS = [
     '/instance/all',
     '/instance/create',
@@ -25,7 +25,7 @@ serve(async (req) => {
     }
 
     try {
-        // Validar JWT do Supabase
+        // 1. Validar JWT do Supabase (Segurança do Proxy)
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
             return new Response(
@@ -34,23 +34,22 @@ serve(async (req) => {
             )
         }
 
-        // Verificar usuário autenticado
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
         const supabase = createClient(supabaseUrl, supabaseKey)
 
-        const token = authHeader.replace('Bearer ', '')
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+        const supabaseToken = authHeader.replace('Bearer ', '')
+        const { data: { user }, error: authError } = await supabase.auth.getUser(supabaseToken)
 
         if (authError || !user) {
             return new Response(
-                JSON.stringify({ error: 'Token inválido' }),
+                JSON.stringify({ error: 'Token Supabase inválido' }),
                 { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
 
-        // Obter configurações da Uazapi
-        const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL') || 'https://optus.uazapi.com'
+        // 2. Configurações da Uazapi
+        const UAZAPI_BASE_URL = 'https://optus.uazapi.com'
         const UAZAPI_ADMIN_TOKEN = (Deno.env.get('UAZAPI_ADMIN_TOKEN') || '').trim()
 
         if (!UAZAPI_ADMIN_TOKEN) {
@@ -60,65 +59,53 @@ serve(async (req) => {
             )
         }
 
-        // Extrair o path real ignorando o prefixo do Supabase (/functions/v1/uazapi-proxy)
+        // 3. Extrair Path e Definir Autenticação
         const url = new URL(req.url)
-        const proxyPath = '/uazapi-proxy'
-        const pathIndex = url.pathname.indexOf(proxyPath)
-        const path = pathIndex !== -1
-            ? url.pathname.substring(pathIndex + proxyPath.length).replace(/\/+/g, '/')
-            : url.pathname.replace(/\/+/g, '/')
-
-        if (!path || path === '/') {
-            return new Response(
-                JSON.stringify({ error: 'Path não especificado' }),
-                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-        }
-
-        // Determinar qual token usar: prioridade para x-instance-token, fallback para admin token
-        const instanceToken = req.headers.get('x-instance-token')
-        const uazapiToken = (instanceToken || UAZAPI_ADMIN_TOKEN).trim()
+        const path = url.pathname.split('/uazapi-proxy')[1] || '/'
 
         const isAdminEndpoint = ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))
+        const instanceToken = req.headers.get('x-instance-token')
 
-        // Preparar requisição para Uazapi
-        const uazapiUrl = `${UAZAPI_BASE_URL}${path}`
-
-        // Enviamos em ambos os headers para garantir compatibilidade
+        // DETERMINAÇÃO DO HEADER E TOKEN CORRETO
+        // Importante: NÃO enviar 'Authorization: Bearer' para a Uazapi, ela não reconhece.
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-            'admintoken': uazapiToken,
-            'token': uazapiToken
         }
 
-        console.log(`[Proxy] ${req.method} ${path} -> ${uazapiUrl}`)
-        console.log(`[Auth] Usando token iniciando em: ${uazapiToken.substring(0, 5)}... (Admin fallback usado: ${!instanceToken})`)
+        if (isAdminEndpoint) {
+            headers['admintoken'] = UAZAPI_ADMIN_TOKEN
+        } else {
+            if (!instanceToken) {
+                return new Response(
+                    JSON.stringify({ error: 'Token da instância não fornecido (x-instance-token)' }),
+                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+            headers['token'] = instanceToken.trim()
+        }
 
+        // 4. Proxy da Requisição
+        const uazapiUrl = `${UAZAPI_BASE_URL}${path.replace(/\/+/g, '/')}`
         const options: RequestInit = {
             method: req.method,
             headers,
         }
 
-        // Incluir body se não for GET/OPTIONS
-        if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+        if (req.method !== 'GET' && req.method !== 'OPTIONS' && req.method !== 'HEAD') {
             try {
-                const contentType = req.headers.get('content-type')
-                if (contentType?.includes('application/json')) {
-                    const body = await req.json()
-                    options.body = JSON.stringify(body)
+                const bodyText = await req.text()
+                if (bodyText) {
+                    options.body = bodyText
                 }
             } catch (e) {
-                console.log('[Body] Erro ao ler body:', e.message)
+                console.error('Erro ao ler body:', e.message)
             }
         }
 
-        // Fazer request para Uazapi
         const uazapiResponse = await fetch(uazapiUrl, options)
         const responseData = await uazapiResponse.text()
 
-        console.log(`[Uazapi] Status: ${uazapiResponse.status}, Resposta: ${responseData.substring(0, 100)}...`)
-
-        // Retornar resposta
+        // 5. Retornar Resposta
         return new Response(responseData, {
             status: uazapiResponse.status,
             headers: {
@@ -130,7 +117,7 @@ serve(async (req) => {
     } catch (error) {
         console.error('Erro no proxy Uazapi:', error)
         return new Response(
-            JSON.stringify({ error: error.message || 'Erro interno' }),
+            JSON.stringify({ error: error.message || 'Erro interno no proxy' }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
