@@ -104,6 +104,9 @@ serve(async (req) => {
             headers['token'] = uazapiToken
         }
 
+        console.log(`Proxyando ${req.method} para: ${uazapiUrl}`)
+        console.log(`Headers enviados:`, Object.keys(headers))
+
         const options: RequestInit = {
             method: req.method,
             headers,
@@ -125,6 +128,8 @@ serve(async (req) => {
         // Fazer request para Uazapi
         const uazapiResponse = await fetch(uazapiUrl, options)
         const responseData = await uazapiResponse.text()
+
+        console.log(`Resposta Uazapi (${uazapiResponse.status}):`, responseData)
 
         // Retornar resposta
         return new Response(responseData, {
