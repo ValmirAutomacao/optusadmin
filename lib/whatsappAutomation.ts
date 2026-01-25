@@ -134,6 +134,15 @@ export class WhatsappAutomationService {
           conversation.id,
           automationResponse.update_context
         );
+
+        // Se o nome foi detectado, atualizar também no Leads
+        if (automationResponse.update_context.customer_name) {
+          await supabase
+            .from('leads')
+            .update({ name: automationResponse.update_context.customer_name })
+            .eq('phone', webhookData.from)
+            .eq('tenant_id', instance.tenant_id);
+        }
       }
 
     } catch (error) {
@@ -222,6 +231,34 @@ export class WhatsappAutomationService {
       .single();
 
     if (error) throw error;
+
+    // 🚀 CRM: Capturar contato como LEAD automaticamente
+    try {
+      // Buscar tenant_id da instância
+      const { data: instance } = await supabase
+        .from('whatsapp_instances')
+        .select('tenant_id')
+        .eq('id', instanceId)
+        .single();
+
+      if (instance) {
+        // Tentar inserir lead (o UNIQUE(tenant_id, phone) evita duplicatas)
+        await supabase
+          .from('leads')
+          .insert({
+            tenant_id: instance.tenant_id,
+            phone: phoneNumber,
+            name: phoneNumber, // Nome inicial é o telefone
+            source: 'whatsapp',
+            status: 'novo'
+          })
+          .onConflict('tenant_id, phone')
+          .ignore(); // Se já existe, não faz nada
+      }
+    } catch (leadError) {
+      console.warn('Aviso: Não foi possível capturar lead automaticamente:', leadError);
+    }
+
     return newConversation;
   }
 
@@ -241,12 +278,14 @@ export class WhatsappAutomationService {
         3 // Top 3 resultados
       );
 
-      // 2. Obter dados da empresa do tenant
       const tenantData = await this.getTenantData(tenantId);
 
-      // 3. Preparar contexto adicional
+      // 3. Obter disponibilidade da Agenda (Horários e Profissionais)
+      const agendaContext = await this.getAgendaAvailability(tenantId);
+
+      // 4. Preparar contexto adicional
       const ragContext = documentResults.length > 0
-        ? `\n\nINFORMAÇÕES DA EMPRESA ENCONTRADAS:\n${documentResults.map(r => r.content_chunk).join('\n\n')}`
+        ? `\n\nINFORMAÇÕES DA EMPRESA ENCONTRADAS (Base de Conhecimento):\n${documentResults.map(r => r.content_chunk).join('\n\n')}`
         : '';
 
       const conversationHistory = await this.getRecentMessages(conversation.id, 5);
@@ -259,15 +298,16 @@ ${conversationHistory}
 
 CONTEXTO ATUAL: ${JSON.stringify(conversation.context)}
 
+DISPONIBILIDADE DA AGENDA:
+${agendaContext}
+
 ${ragContext}
 
 INSTRUÇÕES ESPECÍFICAS:
-- Se o cliente está cumprimentando pela primeira vez, apresente-se e ofereça ajuda
-- Se está perguntando sobre serviços, use as informações da empresa
-- Se quer agendar, colete: nome, telefone, serviço e horário preferido
-- Se a dúvida é complexa ou foge do escopo, ofereça transferir para humano
-- Seja natural, amigável e profissional
-- Sempre termine perguntando como pode ajudar mais
+- Se o cliente quer agendar: ofereça profissionais e horários disponíveis na lista acima.
+- Após coletar dia/hora/profissional, diga: "Ótimo! Vou confirmar seu agendamento para [DATA] às [HORA] com [PROFISSIONAL]. Pode confirmar?".
+- Use as informações da Base de Conhecimento para tirar dúvidas sobre o negócio.
+- Seja natural, amigável e profissional.
 `;
 
       // 4. Processar com IA
@@ -329,6 +369,56 @@ INSTRUÇÕES ESPECÍFICAS:
   }
 
   /**
+   * 📅 Obter disponibilidade da agenda formatada para IA
+   */
+  private static async getAgendaAvailability(tenantId: string): Promise<string> {
+    try {
+      // 1. Buscar profissionais
+      const { data: profissionais } = await supabase
+        .from('profissionais')
+        .select('id, name, especialidade')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'active');
+
+      // 2. Buscar agendamentos de hoje e amanhã (para saber o que está ocupado)
+      const today = new Date().toISOString().split('T')[0];
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+      const { data: ocupados } = await supabase
+        .from('agendamentos')
+        .select('profissional_id, data_agendamento, hora_inicio')
+        .eq('tenant_id', tenantId)
+        .gte('data_agendamento', today)
+        .lte('data_agendamento', tomorrow)
+        .neq('status', 'cancelled');
+
+      if (!profissionais || profissionais.length === 0) {
+        return "Nenhum profissional disponível no momento.";
+      }
+
+      let info = "PROFISSIONAIS E ESPECIALIDADES:\n";
+      profissionais.forEach(p => {
+        info += `- ${p.name} (${p.especialidade || 'Geral'})\n`;
+      });
+
+      info += "\nHORÁRIOS JÁ OCUPADOS (Não oferecer estes):\n";
+      if (ocupados && ocupados.length > 0) {
+        ocupados.forEach(o => {
+          const prof = profissionais.find(p => p.id === o.profissional_id)?.name || 'Profissional';
+          info += `- ${prof}: ${o.data_agendamento} às ${o.hora_inicio}\n`;
+        });
+      } else {
+        info += "- Todas as vagas estão livres para hoje e amanhã entre 08h e 18h.\n";
+      }
+
+      return info;
+    } catch (error) {
+      console.error('Erro ao buscar disponibilidade:', error);
+      return "Erro ao carregar agenda. Por favor, peça para falar com um humano.";
+    }
+  }
+
+  /**
    * 📜 Obter mensagens recentes da conversa
    */
   private static async getRecentMessages(conversationId: string, limit: number = 5): Promise<string> {
@@ -359,9 +449,9 @@ INSTRUÇÕES ESPECÍFICAS:
 
     // Detectar solicitação de agendamento
     if (messageLower.includes('agendar') ||
-        messageLower.includes('marcar') ||
-        messageLower.includes('consulta') ||
-        messageLower.includes('horário')) {
+      messageLower.includes('marcar') ||
+      messageLower.includes('consulta') ||
+      messageLower.includes('horário')) {
       actions.push({
         type: 'schedule_appointment',
         data: { trigger: 'scheduling_request' }
@@ -370,9 +460,9 @@ INSTRUÇÕES ESPECÍFICAS:
 
     // Detectar solicitação de transferência para humano
     if (messageLower.includes('falar com') ||
-        messageLower.includes('atendente') ||
-        messageLower.includes('pessoa') ||
-        aiResponse.includes('transferir')) {
+      messageLower.includes('atendente') ||
+      messageLower.includes('pessoa') ||
+      aiResponse.includes('transferir')) {
       actions.push({
         type: 'transfer_human',
         data: { reason: 'customer_request' }
@@ -394,9 +484,9 @@ INSTRUÇÕES ESPECÍFICAS:
 
     // Detectar nome do cliente
     if (messageLower.includes('meu nome é') ||
-        messageLower.includes('me chamo') ||
-        messageLower.includes('sou o') ||
-        messageLower.includes('sou a')) {
+      messageLower.includes('me chamo') ||
+      messageLower.includes('sou o') ||
+      messageLower.includes('sou a')) {
       const nameMatch = userMessage.match(/(?:nome é|me chamo|sou o|sou a)\s+([a-záàâãéèêíìîóòôõúùûç\s]+)/i);
       if (nameMatch) {
         updates.customer_name = nameMatch[1].trim();
@@ -405,8 +495,8 @@ INSTRUÇÕES ESPECÍFICAS:
 
     // Detectar interesse em serviços
     if (messageLower.includes('gostaria') ||
-        messageLower.includes('quero') ||
-        messageLower.includes('preciso')) {
+      messageLower.includes('quero') ||
+      messageLower.includes('preciso')) {
       updates.service_interest = userMessage;
     }
 
@@ -487,14 +577,46 @@ INSTRUÇÕES ESPECÍFICAS:
   }
 
   /**
-   * 📅 Lidar com fluxo de agendamento
+   * 📅 Lidar com fluxo de agendamento real
    */
   private static async handleSchedulingFlow(
     instance: any,
     conversation: WhatsappConversation
   ): Promise<void> {
-    // Lógica para agendamento - integração com sistema existente
-    // Por enquanto, apenas atualizar status
+    const context = conversation.context as any;
+
+    // Se a IA coletou data, hora e profissional, tentamos criar o agendamento
+    if (context.appointment_date && context.appointment_time && context.customer_name) {
+      try {
+        // 1. Tentar encontrar o profissional pelo nome (aproximado)
+        const { data: prof } = await supabase
+          .from('profissionais')
+          .select('id')
+          .ilike('name', `%${context.professional_name || ''}%`)
+          .limit(1)
+          .single();
+
+        // 2. Criar agendamento
+        await supabase
+          .from('agendamentos')
+          .insert({
+            tenant_id: instance.tenant_id,
+            cliente_id: null, // Será preenchido quando o cliente for cadastrado
+            name: context.customer_name,
+            profissional_id: prof?.id || null,
+            data_agendamento: context.appointment_date,
+            hora_inicio: context.appointment_time,
+            status: 'pending', // Aguardando confirmação humana
+            observacoes: `Criado via Chatbot IA [WhatsApp: ${conversation.phone_number}]`
+          });
+
+        console.log('Agendamento criado com sucesso via Chatbot');
+      } catch (err) {
+        console.error('Erro ao criar agendamento automático:', err);
+      }
+    }
+
+    // Atualizar status da conversa
     await supabase
       .from('whatsapp_conversations')
       .update({

@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 
 import type { WhatsappConversation } from '../lib/whatsappAutomation';
+import { UazapiService } from '../lib/uazapi';
+import { supabase } from '../lib/supabase';
 
 interface ConversationPanelProps {
   conversations: WhatsappConversation[];
@@ -113,35 +115,41 @@ export const ConversationPanel: React.FC<ConversationPanelProps> = ({
   const loadConversationMessages = async (conversation: WhatsappConversation) => {
     setLoadingMessages(true);
     try {
-      // Aqui você chamaria a API para buscar mensagens
-      // const messages = await getConversationMessages(conversation.id);
-      // Por enquanto, usando dados mock
-      const mockMessages = [
-        {
-          id: '1',
-          content: 'Olá, gostaria de agendar uma consulta',
-          is_from_contact: true,
-          created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-          ai_processed: false
-        },
-        {
-          id: '2',
-          content: 'Olá! Claro, posso ajudar com o agendamento. Qual seria sua preferência de horário?',
-          is_from_contact: false,
-          created_at: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-          ai_processed: true
-        },
-        {
-          id: '3',
-          content: 'Prefiro pela manhã, se possível',
-          is_from_contact: true,
-          created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-          ai_processed: false
-        }
-      ];
-      setConversationMessages(mockMessages);
+      const uazapi = new UazapiService();
+
+      // Buscar token da instância no banco ou via contexto
+      const { data: instanceData } = await supabase
+        .from('whatsapp_instances')
+        .select('uazapi_token')
+        .eq('id', conversation.whatsapp_instance_id)
+        .single();
+
+      if (!instanceData?.uazapi_token) {
+        throw new Error('Token da instância não encontrado');
+      }
+
+      // Formato esperado pela Uazapi: phone@s.whatsapp.net
+      const chatid = conversation.phone_number.includes('@')
+        ? conversation.phone_number
+        : `${conversation.phone_number}@s.whatsapp.net`;
+
+      const response = await uazapi.findMessages(instanceData.uazapi_token, {
+        chatid,
+        limit: 50
+      });
+
+      // Mapear mensagens da Uazapi para o formato do componente
+      const messages = response.messages.map((msg: any) => ({
+        id: msg.id,
+        content: msg.message?.text || msg.message?.caption || '[Mídia]',
+        is_from_contact: !msg.fromMe,
+        created_at: new Date(msg.timestamp * 1000).toISOString(),
+        ai_processed: msg.track_source === 'ai_agent'
+      }));
+
+      setConversationMessages(messages.reverse());
     } catch (error) {
-      console.error('Erro ao carregar mensagens:', error);
+      console.error('Erro ao carregar mensagens reais:', error);
       setConversationMessages([]);
     } finally {
       setLoadingMessages(false);
@@ -358,13 +366,12 @@ export const ConversationPanel: React.FC<ConversationPanelProps> = ({
                           className={`flex ${message.is_from_contact ? 'justify-start' : 'justify-end'}`}
                         >
                           <div
-                            className={`max-w-[70%] p-3 rounded-lg ${
-                              message.is_from_contact
-                                ? 'bg-gray-100 text-gray-900'
-                                : message.ai_processed
+                            className={`max-w-[70%] p-3 rounded-lg ${message.is_from_contact
+                              ? 'bg-gray-100 text-gray-900'
+                              : message.ai_processed
                                 ? 'bg-blue-500 text-white'
                                 : 'bg-green-500 text-white'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center space-x-1 mb-1">
                               {message.is_from_contact ? (
@@ -388,17 +395,58 @@ export const ConversationPanel: React.FC<ConversationPanelProps> = ({
               </div>
 
               {/* Ações */}
-              {selectedConversation.status === 'active' && (
+              <div className="pt-4 border-t space-y-4">
+                <div className="flex gap-2">
+                  <textarea
+                    id="reply-message"
+                    className="flex-1 min-h-[80px] p-3 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
+                    placeholder="Digite sua resposta aqui..."
+                  />
+                  <Button
+                    className="self-end"
+                    onClick={async () => {
+                      const input = document.getElementById('reply-message') as HTMLTextAreaElement;
+                      const message = input.value.trim();
+                      if (!message || !selectedConversation) return;
+
+                      try {
+                        const uazapi = new UazapiService();
+                        const { data: instanceData } = await supabase
+                          .from('whatsapp_instances')
+                          .select('uazapi_token')
+                          .eq('id', selectedConversation.whatsapp_instance_id)
+                          .single();
+
+                        if (instanceData?.uazapi_token) {
+                          await uazapi.sendMessage(instanceData.uazapi_token, {
+                            phone: selectedConversation.phone_number,
+                            message: message
+                          });
+                          input.value = '';
+                          // Recarregar mensagens
+                          loadConversationMessages(selectedConversation);
+                        }
+                      } catch (err) {
+                        console.error('Erro ao enviar mensagem:', err);
+                        alert('Erro ao enviar mensagem');
+                      }
+                    }}
+                  >
+                    Enviar
+                  </Button>
+                </div>
+
                 <div className="flex justify-end space-x-2">
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={() => handleTransferToHuman(selectedConversation.id)}
                   >
                     <UserCheck className="mr-2 h-4 w-4" />
-                    Transferir para Humano
+                    Finalizar Atendimento IA
                   </Button>
                 </div>
-              )}
+              </div>
             </div>
           )}
         </DialogContent>

@@ -2,6 +2,7 @@
 // Usa componentes UI customizados do projeto
 
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import { agentConfigService, uazapiChatbotService } from '../lib/uazapiChatbot';
 import type { AgentConfigData } from '../lib/uazapiChatbot';
 import Button from './ui/Button';
@@ -62,10 +63,21 @@ export function ChatbotConfigPanel({
     const [saving, setSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [existingConfig, setExistingConfig] = useState<AgentConfigData | null>(null);
+    const [availablePrompts, setAvailablePrompts] = useState<{ id: string; name: string }[]>([]);
 
     useEffect(() => {
         loadConfig();
+        loadPrompts();
     }, [instanceId, isGlobal]);
+
+    const loadPrompts = async () => {
+        try {
+            const { data } = await supabase.from('system_prompts').select('id, name');
+            if (data) setAvailablePrompts(data);
+        } catch (error) {
+            console.error('Failed to load prompts:', error);
+        }
+    };
 
     const loadConfig = async () => {
         try {
@@ -259,6 +271,31 @@ export function ChatbotConfigPanel({
                 <p className="text-xs text-gray-500 ml-1">
                     {config.provider === 'openrouter' ? 'Obtenha em openrouter.ai/keys' : `Obtenha no painel do ${config.provider}`}
                 </p>
+            </div>
+
+            <hr className="border-gray-200" />
+
+            {/* Seção: Prompt de Sistema */}
+            <div className="space-y-4">
+                <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    🧠 Cérebro do Assistente (Prompt)
+                </h4>
+
+                <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
+                        Selecionar Prompt do Sistema
+                    </label>
+                    <select
+                        value={config.system_prompt_id || ''}
+                        onChange={(e) => setConfig(prev => ({ ...prev, system_prompt_id: e.target.value || undefined }))}
+                        className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                    >
+                        <option value="">Nenhum (Usar instruções manuais abaixo)</option>
+                        {availablePrompts.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             <hr className="border-gray-200" />

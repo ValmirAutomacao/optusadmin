@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useTenantQuery, useTenantInsert, useTenantUpdate, useTenantDelete } from '../hooks/useTenantQuery';
 import { useTenant } from '../contexts/TenantContext';
 import Layout from '../components/Layout';
@@ -28,6 +29,7 @@ interface Cliente {
 
 const Clientes: React.FC = () => {
   const { currentTenant } = useTenant();
+  const location = useLocation();
   const [showNewForm, setShowNewForm] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,6 +43,22 @@ const Clientes: React.FC = () => {
     email_consent: false,
     lgpd_consent: false
   });
+
+  // Capturar dados de um novo lead sendo convertido
+  React.useEffect(() => {
+    const state = location.state as any;
+    if (state?.newClient) {
+      setFormData(prev => ({
+        ...prev,
+        name: state.newClient.name || '',
+        phone: state.newClient.phone || '',
+        notes: 'Lead convertido do WhatsApp'
+      }));
+      setShowNewForm(true);
+      // Limpar estado para não reabrir ao atualizar
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [formLoading, setFormLoading] = useState(false);
 

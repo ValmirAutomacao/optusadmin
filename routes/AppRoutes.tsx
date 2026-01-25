@@ -13,6 +13,7 @@ import Whatsapp from '../pages/Whatsapp';
 import MvpManagement from '../pages/MvpManagement';
 import Conhecimento from '../pages/Conhecimento';
 import ManagerOnboarding from '../pages/ManagerOnboarding';
+import Leads from '../pages/Leads';
 
 const AppRoutes: React.FC = () => {
   const [isMobile, setIsMobile] = React.useState<boolean>(false);
@@ -67,6 +68,19 @@ const AppRoutes: React.FC = () => {
                   requiredRole={['developer', 'admin', 'secretaria']}
                 >
                   <Clientes />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Leads - Acesso para admin, secretaria */}
+            <Route
+              path="/leads"
+              element={
+                <ProtectedRoute
+                  isMobile={isMobile}
+                  requiredRole={['developer', 'admin', 'secretaria']}
+                >
+                  <Leads />
                 </ProtectedRoute>
               }
             />

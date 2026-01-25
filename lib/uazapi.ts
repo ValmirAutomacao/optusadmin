@@ -220,6 +220,26 @@ export class UazapiService {
       instanceToken
     )
   }
+
+  // 9. Buscar mensagens (Histórico)
+  async findMessages(instanceToken: string, filters: {
+    chatid?: string
+    id?: string
+    limit?: number
+    offset?: number
+  }): Promise<{
+    returnedMessages: number
+    messages: any[]
+    hasMore: boolean
+    nextOffset: number
+  }> {
+    return await this.makeRequest(
+      '/message/find',
+      'POST',
+      filters,
+      instanceToken
+    )
+  }
 }
 
 // Serviço principal para gerenciar instâncias WhatsApp

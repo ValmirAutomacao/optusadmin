@@ -23,6 +23,9 @@ import Layout from '../components/Layout';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import ChatbotConfigPanel from '../components/ChatbotConfigPanel';
+import { SystemPromptsPanel } from '../components/SystemPromptsPanel';
+import { useSystemPrompts } from '../lib/systemPrompts';
+import { useAIAgents } from '../lib/aiAgents';
 
 interface Tenant {
     id: string;
@@ -76,6 +79,9 @@ export default function MvpManagement() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
+
+    const { prompts, activePrompt, loading: loadingPrompts } = useSystemPrompts();
+    const { agents, loadAgents } = useAIAgents();
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -150,23 +156,24 @@ export default function MvpManagement() {
                         />
                     )}
                     {activeTab === 'chatbot' && (
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center mb-6">
-                                <div>
-                                    <h2 className="text-xl font-semibold">Configuração Centralizada do Chatbot</h2>
-                                    <p className="text-sm text-gray-500">Esta configuração será aplicada a todos os clientes</p>
-                                </div>
-                            </div>
                             <ChatbotConfigPanel
                                 instanceId="global"
                                 instanceName="Configuração Global"
                                 isGlobal={true}
                             />
+
+                            <div className="pt-8 border-t">
+                                <SystemPromptsPanel
+                                    prompts={prompts}
+                                    activePrompt={activePrompt}
+                                    loading={loadingPrompts}
+                                />
+                            </div>
                         </div>
                     )}
-                </div>
             </div>
-        </Layout>
+        </div>
+        </Layout >
     );
 }
 

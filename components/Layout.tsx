@@ -55,6 +55,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 onClick={() => navigate('/clientes')}
               />
               <NavItem
+                icon="contact_page"
+                label="Leads"
+                active={location.pathname === '/leads'}
+                onClick={() => navigate('/leads')}
+              />
+              <NavItem
                 icon="medical_services"
                 label="Profissionais"
                 active={location.pathname === '/profissionais'}

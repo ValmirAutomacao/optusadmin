@@ -1,5 +1,4 @@
-// Edge Function: Proxy seguro para API Uazapi
-// Protege o ADMIN_TOKEN mantendo-o apenas no servidor
+// Edge Function: Proxy seguro para API Uazapi (Versão 17 - Bypass JWT Gateway)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -10,115 +9,86 @@ const corsHeaders = {
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 }
 
-// Endpoints que requerem ADMIN_TOKEN (conforme OpenAPI)
-const ADMIN_ENDPOINTS = [
-    '/instance/all',
-    '/instance/create',
-    '/instance/delete',
-    '/instance/init',
-]
-
 serve(async (req) => {
-    // Handle CORS preflight
-    if (req.method === 'OPTIONS') {
-        return new Response('ok', { headers: corsHeaders })
-    }
+    if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
     try {
-        // 1. Validar JWT do Supabase (Segurança do Proxy)
+        // 1. Validar Usuário (Fazemos manual para ter controle total dos erros)
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
-            return new Response(
-                JSON.stringify({ error: 'Não autorizado' }),
-                { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
+            console.error('[AUTH] Sem header de autorização')
+            return new Response(JSON.stringify({ error: 'Não autorizado (Sem Header)' }), { status: 401, headers: corsHeaders })
         }
 
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-        const supabase = createClient(supabaseUrl, supabaseKey)
-
-        const supabaseToken = authHeader.replace('Bearer ', '')
-        const { data: { user }, error: authError } = await supabase.auth.getUser(supabaseToken)
+        const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+        const token = authHeader.replace('Bearer ', '')
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
 
         if (authError || !user) {
-            return new Response(
-                JSON.stringify({ error: 'Token Supabase inválido' }),
-                { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
+            console.error('[AUTH] Erro ao validar JWT no Supabase:', authError?.message)
+            return new Response(JSON.stringify({
+                error: 'SessãoSupabaseInvalida',
+                details: authError?.message
+            }), { status: 401, headers: corsHeaders })
         }
 
-        // 2. Configurações da Uazapi
-        const UAZAPI_BASE_URL = 'https://optus.uazapi.com'
+        console.log(`[AUTH] Usuário validado: ${user.email}`)
+
+        // 2. Configurações Uazapi
         const UAZAPI_ADMIN_TOKEN = (Deno.env.get('UAZAPI_ADMIN_TOKEN') || '').trim()
+        const UAZAPI_BASE_URL = 'https://optus.uazapi.com'
 
         if (!UAZAPI_ADMIN_TOKEN) {
-            return new Response(
-                JSON.stringify({ error: 'UAZAPI_ADMIN_TOKEN não configurado no servidor' }),
-                { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
+            console.error('[CONFIG] UAZAPI_ADMIN_TOKEN ausente')
+            return new Response(JSON.stringify({ error: 'Admin token não configurado' }), { status: 500, headers: corsHeaders })
         }
 
-        // 3. Extrair Path e Definir Autenticação
+        // 3. Preparar Path
         const url = new URL(req.url)
         const path = url.pathname.split('/uazapi-proxy')[1] || '/'
-
-        const isAdminEndpoint = ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))
-        const instanceToken = req.headers.get('x-instance-token')
-
-        // DETERMINAÇÃO DO HEADER E TOKEN CORRETO
-        // Importante: NÃO enviar 'Authorization: Bearer' para a Uazapi, ela não reconhece.
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        }
-
-        if (isAdminEndpoint) {
-            headers['admintoken'] = UAZAPI_ADMIN_TOKEN
-        } else {
-            if (!instanceToken) {
-                return new Response(
-                    JSON.stringify({ error: 'Token da instância não fornecido (x-instance-token)' }),
-                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                )
-            }
-            headers['token'] = instanceToken.trim()
-        }
-
-        // 4. Proxy da Requisição
         const uazapiUrl = `${UAZAPI_BASE_URL}${path.replace(/\/+/g, '/')}`
+
+        // 4. Headers Uazapi
+        const instanceToken = req.headers.get('x-instance-token')
+        const activeToken = (instanceToken || UAZAPI_ADMIN_TOKEN).trim()
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json'
+        }
+
+        // Endpoints que requerem admintoken
+        const adminPaths = ['/instance/all', '/instance/init', '/instance/create', '/instance/delete', '/instance/restore']
+        if (adminPaths.some(ap => path.startsWith(ap)) || !instanceToken) {
+            headers['admintoken'] = activeToken
+            console.log(`[UAZAPI] Usando admintoken para ${path}`)
+        } else {
+            headers['token'] = activeToken
+            console.log(`[UAZAPI] Usando token para ${path}`)
+        }
+
+        // 5. Proxy Call
         const options: RequestInit = {
             method: req.method,
-            headers,
+            headers
         }
 
-        if (req.method !== 'GET' && req.method !== 'OPTIONS' && req.method !== 'HEAD') {
-            try {
-                const bodyText = await req.text()
-                if (bodyText) {
-                    options.body = bodyText
-                }
-            } catch (e) {
-                console.error('Erro ao ler body:', e.message)
-            }
+        if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+            options.body = await req.text()
         }
 
-        const uazapiResponse = await fetch(uazapiUrl, options)
-        const responseData = await uazapiResponse.text()
+        console.log(`[FETCH] Chamando Uazapi: ${uazapiUrl}`)
+        const response = await fetch(uazapiUrl, options)
+        const result = await response.text()
 
-        // 5. Retornar Resposta
-        return new Response(responseData, {
-            status: uazapiResponse.status,
-            headers: {
-                ...corsHeaders,
-                'Content-Type': 'application/json',
-            },
+        console.log(`[RESULT] Status: ${response.status}, Body: ${result.substring(0, 100)}`)
+
+        return new Response(result, {
+            status: response.status,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
     } catch (error) {
-        console.error('Erro no proxy Uazapi:', error)
-        return new Response(
-            JSON.stringify({ error: error.message || 'Erro interno no proxy' }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        console.error('[FATAL]', error)
+        return new Response(JSON.stringify({ error: 'Erro interno no servidor de proxy' }), { status: 500, headers: corsHeaders })
     }
 })
