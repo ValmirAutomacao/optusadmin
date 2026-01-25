@@ -15,6 +15,7 @@ const ADMIN_ENDPOINTS = [
     '/instance/all',
     '/instance/create',
     '/instance/delete',
+    '/instance/init',
 ]
 
 serve(async (req) => {
@@ -59,11 +60,15 @@ serve(async (req) => {
             )
         }
 
-        // Extrair o path da requisição
+        // Extrair o path real ignorando o prefixo do Supabase (/functions/v1/uazapi-proxy)
         const url = new URL(req.url)
-        const path = url.pathname.replace('/uazapi-proxy', '')
+        const proxyPath = '/uazapi-proxy'
+        const pathIndex = url.pathname.indexOf(proxyPath)
+        const path = pathIndex !== -1
+            ? url.pathname.substring(pathIndex + proxyPath.length)
+            : url.pathname
 
-        if (!path) {
+        if (!path || path === '/') {
             return new Response(
                 JSON.stringify({ error: 'Path não especificado' }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -72,27 +77,31 @@ serve(async (req) => {
 
         // Determinar qual token usar
         let uazapiToken: string
+        const isAdminEndpoint = ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))
 
-        if (ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))) {
-            // Operações admin - usar ADMIN_TOKEN
+        if (isAdminEndpoint) {
             uazapiToken = UAZAPI_ADMIN_TOKEN
         } else {
-            // Operações de instância - usar token da instância (header)
             const instanceToken = req.headers.get('x-instance-token')
             if (!instanceToken) {
                 return new Response(
-                    JSON.stringify({ error: 'Token da instância não fornecido' }),
+                    JSON.stringify({ error: 'Token da instância não fornecido para endpoint não-admin' }),
                     { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )
             }
             uazapiToken = instanceToken
         }
 
-        // Preparar request para Uazapi
+        // Preparar requisição para Uazapi com os headers corretos (admintoken ou token)
         const uazapiUrl = `${UAZAPI_BASE_URL}${path}`
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${uazapiToken}`,
+        }
+
+        if (isAdminEndpoint) {
+            headers['admintoken'] = uazapiToken
+        } else {
+            headers['token'] = uazapiToken
         }
 
         const options: RequestInit = {
@@ -100,13 +109,16 @@ serve(async (req) => {
             headers,
         }
 
-        // Incluir body se não for GET
-        if (req.method !== 'GET') {
+        // Incluir body se não for GET/OPTIONS
+        if (req.method !== 'GET' && req.method !== 'OPTIONS') {
             try {
-                const body = await req.json()
-                options.body = JSON.stringify(body)
-            } catch {
-                // Request sem body
+                const contentType = req.headers.get('content-type')
+                if (contentType?.includes('application/json')) {
+                    const body = await req.json()
+                    options.body = JSON.stringify(body)
+                }
+            } catch (e) {
+                console.log('Sem body ou erro ao processar:', e.message)
             }
         }
 
