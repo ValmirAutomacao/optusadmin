@@ -51,11 +51,11 @@ serve(async (req) => {
 
         // Obter configurações da Uazapi
         const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL') || 'https://optus.uazapi.com'
-        const UAZAPI_ADMIN_TOKEN = Deno.env.get('UAZAPI_ADMIN_TOKEN')
+        const UAZAPI_ADMIN_TOKEN = (Deno.env.get('UAZAPI_ADMIN_TOKEN') || '').trim()
 
         if (!UAZAPI_ADMIN_TOKEN) {
             return new Response(
-                JSON.stringify({ error: 'Configuração do servidor incompleta' }),
+                JSON.stringify({ error: 'UAZAPI_ADMIN_TOKEN não configurado no servidor' }),
                 { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
@@ -65,8 +65,8 @@ serve(async (req) => {
         const proxyPath = '/uazapi-proxy'
         const pathIndex = url.pathname.indexOf(proxyPath)
         const path = pathIndex !== -1
-            ? url.pathname.substring(pathIndex + proxyPath.length)
-            : url.pathname
+            ? url.pathname.substring(pathIndex + proxyPath.length).replace(/\/+/g, '/')
+            : url.pathname.replace(/\/+/g, '/')
 
         if (!path || path === '/') {
             return new Response(
@@ -75,37 +75,24 @@ serve(async (req) => {
             )
         }
 
-        // Determinar qual token usar
-        let uazapiToken: string
+        // Determinar qual token usar: prioridade para x-instance-token, fallback para admin token
+        const instanceToken = req.headers.get('x-instance-token')
+        const uazapiToken = (instanceToken || UAZAPI_ADMIN_TOKEN).trim()
+
         const isAdminEndpoint = ADMIN_ENDPOINTS.some(endpoint => path.startsWith(endpoint))
 
-        if (isAdminEndpoint) {
-            uazapiToken = UAZAPI_ADMIN_TOKEN
-        } else {
-            const instanceToken = req.headers.get('x-instance-token')
-            if (!instanceToken) {
-                return new Response(
-                    JSON.stringify({ error: 'Token da instância não fornecido para endpoint não-admin' }),
-                    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                )
-            }
-            uazapiToken = instanceToken
-        }
-
-        // Preparar requisição para Uazapi com os headers corretos (admintoken ou token)
+        // Preparar requisição para Uazapi
         const uazapiUrl = `${UAZAPI_BASE_URL}${path}`
+
+        // Enviamos em ambos os headers para garantir compatibilidade
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
+            'admintoken': uazapiToken,
+            'token': uazapiToken
         }
 
-        if (isAdminEndpoint) {
-            headers['admintoken'] = uazapiToken
-        } else {
-            headers['token'] = uazapiToken
-        }
-
-        console.log(`Proxyando ${req.method} para: ${uazapiUrl}`)
-        console.log(`Headers enviados:`, Object.keys(headers))
+        console.log(`[Proxy] ${req.method} ${path} -> ${uazapiUrl}`)
+        console.log(`[Auth] Usando token iniciando em: ${uazapiToken.substring(0, 5)}... (Admin fallback usado: ${!instanceToken})`)
 
         const options: RequestInit = {
             method: req.method,
@@ -121,7 +108,7 @@ serve(async (req) => {
                     options.body = JSON.stringify(body)
                 }
             } catch (e) {
-                console.log('Sem body ou erro ao processar:', e.message)
+                console.log('[Body] Erro ao ler body:', e.message)
             }
         }
 
@@ -129,7 +116,7 @@ serve(async (req) => {
         const uazapiResponse = await fetch(uazapiUrl, options)
         const responseData = await uazapiResponse.text()
 
-        console.log(`Resposta Uazapi (${uazapiResponse.status}):`, responseData)
+        console.log(`[Uazapi] Status: ${uazapiResponse.status}, Resposta: ${responseData.substring(0, 100)}...`)
 
         // Retornar resposta
         return new Response(responseData, {
