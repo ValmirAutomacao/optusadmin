@@ -87,7 +87,7 @@ export interface AgentConfigData {
   name: string;
   provider: string;
   model: string;
-  api_key?: string;
+  api_key_encrypted?: string;
   system_prompt_id?: string;
   custom_instructions?: string;
   temperature?: number;
@@ -313,7 +313,7 @@ export class UazapiChatbotService {
         .from('uazapi_agent_configs')
         .select(`
           *,
-          whatsapp_instances!inner(uazapi_token),
+          whatsapp_instances(uazapi_token),
           system_prompts(system_prompt)
         `)
         .eq('id', agentConfigId)
@@ -323,21 +323,40 @@ export class UazapiChatbotService {
         throw new Error(`Agent config not found: ${fetchError?.message}`);
       }
 
-      const instanceToken = agentConfig.whatsapp_instances.uazapi_token;
-      if (!instanceToken) {
-        throw new Error('Instance token not found');
+      // 2. Buscar Configuração Global (Cérebro compartilhado)
+      const { data: globalConfig } = await supabase
+        .from('uazapi_agent_configs')
+        .select(`
+          *,
+          system_prompts(system_prompt)
+        `)
+        .eq('is_global', true)
+        .limit(1)
+        .maybeSingle();
+
+      // Se for global, não faz nada (já está salvo como template)
+      if (agentConfig.is_global) {
+        return { success: true };
       }
 
-      // 2. Preparar dados do agente para Uazapi
+      const instanceToken = agentConfig.whatsapp_instances?.uazapi_token;
+      if (!instanceToken) {
+        throw new Error('Instância de WhatsApp não vinculada. Escolha um WhatsApp para este chatbot.');
+      }
+
+      // 3. Preparar dados do agente para Uazapi (Mesclando Global + Local)
+      // Prioridade técnica para o Global (Config do Developer)
+      // Prioridade de identificação para o Local (Nome da empresa)
+      const technicalSource = globalConfig || agentConfig;
       const uazapiAgent: Partial<UazapiAgent> = {
-        id: agentConfig.uazapi_agent_id || undefined, // Criar novo se não existir
-        name: agentConfig.name,
-        provider: this.mapProviderToUazapi(agentConfig.provider),
-        model: agentConfig.model,
-        apikey: agentConfig.api_key_encrypted, // TODO: Decrypt
-        basePrompt: agentConfig.system_prompts?.system_prompt || agentConfig.custom_instructions || '',
-        maxTokens: agentConfig.max_tokens || 1024,
-        temperature: Math.round((agentConfig.temperature || 0.7) * 100), // Convert 0-1 to 0-100
+        id: agentConfig.uazapi_agent_id || undefined,
+        name: agentConfig.name || technicalSource.name,
+        provider: this.mapProviderToUazapi(technicalSource.provider),
+        model: technicalSource.model,
+        apikey: technicalSource.api_key_encrypted,
+        basePrompt: technicalSource.system_prompts?.system_prompt || technicalSource.custom_instructions || '',
+        maxTokens: technicalSource.max_tokens || 1024,
+        temperature: Math.round((technicalSource.temperature || 0.7) * 100),
         contextTimeWindow_hours: 24,
         contextMaxMessages: 50,
         contextMinMessages: 1,
@@ -345,7 +364,7 @@ export class UazapiChatbotService {
         typingDelay_seconds: 2,
       };
 
-      // 3. Criar/atualizar agente na Uazapi
+      // 4. Criar/atualizar agente na Uazapi
       const uazapiResponse = await this.editAgent(instanceToken, uazapiAgent);
 
       // 4. Atualizar IDs de sincronização no Supabase
@@ -408,9 +427,9 @@ export class UazapiChatbotService {
         throw new Error(`Knowledge not found: ${fetchError?.message}`);
       }
 
-      const instanceToken = knowledge.uazapi_agent_configs.whatsapp_instances.uazapi_token;
+      const instanceToken = knowledge.uazapi_agent_configs?.whatsapp_instances?.uazapi_token;
       if (!instanceToken) {
-        throw new Error('Instance token not found');
+        throw new Error('Instância de WhatsApp não vinculada. Conecte um WhatsApp para sincronizar o conhecimento.');
       }
 
       // 2. Preparar dados do conhecimento para Uazapi
@@ -579,6 +598,54 @@ export class AgentConfigService {
     return data.tenant_id;
   }
 
+  // Obter configuração ativa para o tenant
+  async getAgentConfigForTenant(): Promise<AgentConfigData | null> {
+    const tenantId = await this.getCurrentTenantId();
+
+    const { data, error } = await supabase
+      .from('uazapi_agent_configs')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('is_global', false);
+
+    if (data && data.length > 0) return data[0];
+    return this.applyGlobalToTenant(tenantId);
+  }
+
+  // Aplicar config global a um tenant
+  async applyGlobalToTenant(tenantId: string): Promise<AgentConfigData | null> {
+    const globalConfig = await this.getGlobalConfig();
+    if (!globalConfig) return null;
+
+    const { data, error } = await supabase
+      .from('uazapi_agent_configs')
+      .insert({
+        tenant_id: tenantId,
+        instance_id: null,
+        is_global: false,
+        name: globalConfig.name,
+        provider: globalConfig.provider,
+        model: globalConfig.model,
+        api_key_encrypted: (globalConfig as any).api_key_encrypted,
+        system_prompt_id: globalConfig.system_prompt_id,
+        custom_instructions: globalConfig.custom_instructions,
+        temperature: globalConfig.temperature,
+        max_tokens: globalConfig.max_tokens,
+        audio_fallback_message: globalConfig.audio_fallback_message,
+        image_fallback_message: globalConfig.image_fallback_message,
+        transfer_on_image: globalConfig.transfer_on_image,
+        is_active: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error applying global config to tenant:', error);
+      return null;
+    }
+    return data;
+  }
+
   // Listar configurações de agente do tenant
   async listAgentConfigs(): Promise<AgentConfigData[]> {
     const tenantId = await this.getCurrentTenantId();
@@ -599,10 +666,10 @@ export class AgentConfigService {
       .from('uazapi_agent_configs')
       .select('*')
       .eq('instance_id', instanceId)
-      .single();
+      .limit(1);
 
-    if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    if (error) throw error;
+    return data && data.length > 0 ? data[0] : null;
   }
 
   // Criar ou atualizar configuração de agente
@@ -684,10 +751,10 @@ export class AgentConfigService {
       .from('uazapi_agent_configs')
       .select('*')
       .eq('is_global', true)
-      .single();
+      .limit(1);
 
-    if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    if (error) throw error;
+    return data && data.length > 0 ? data[0] : null;
   }
 
   // Salvar configuração global
@@ -742,6 +809,7 @@ export class AgentConfigService {
         provider: globalConfig.provider,
         model: globalConfig.model,
         api_key_encrypted: (globalConfig as any).api_key_encrypted,
+        system_prompt_id: globalConfig.system_prompt_id,
         custom_instructions: globalConfig.custom_instructions,
         temperature: globalConfig.temperature,
         max_tokens: globalConfig.max_tokens,
@@ -899,9 +967,37 @@ export class KnowledgeService {
       return JSON.stringify(JSON.parse(text), null, 2);
     }
 
-    // Para outros tipos, por enquanto retornar mensagem
-    // TODO: Implementar extração de PDF, DOCX, etc.
-    throw new Error(`Tipo de arquivo não suportado: ${fileType}. Use .txt ou .json`);
+    if (fileType === 'application/pdf') {
+      try {
+        // Carregar PDF.js dinamicamente via CDN se não estiver disponível
+        if (!(window as any).pdfjsLib) {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+          document.head.appendChild(script);
+          await new Promise((resolve) => { script.onload = resolve; });
+          (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        const pdfjsLib = (window as any).pdfjsLib;
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          fullText += pageText + '\n\n';
+        }
+
+        return fullText.trim() || 'O PDF parece não conter texto extraível.';
+      } catch (error) {
+        console.error('PDF extraction failed:', error);
+        throw new Error('Falha ao extrair texto do PDF. Tente copiar e colar o texto manualmente.');
+      }
+    }
+
+    throw new Error(`Tipo de arquivo não suportado: ${fileType}. Use .txt, .json ou .pdf`);
   }
 }
 

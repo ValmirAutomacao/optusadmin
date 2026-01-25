@@ -1,22 +1,7 @@
 // Dashboard Principal de Automação WhatsApp
 import React, { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  MessageCircle,
-  Bot,
-  FileText,
-  Settings,
-  TrendingUp,
-  Users,
-  Clock,
-  Zap,
-  Shield,
-  Upload,
-  Eye
-} from 'lucide-react';
+import Button from './ui/Button';
+
 
 import { useAIAgents } from '../lib/aiAgents';
 import { useSystemPrompts } from '../lib/systemPrompts';
@@ -39,10 +24,10 @@ export const AutomationDashboard: React.FC<AutomationDashboardProps> = ({ tenant
   const [activeTab, setActiveTab] = useState('overview');
 
   // Hooks dos sistemas
-  const { activeAgent, agents, loading: agentsLoading } = useAIAgents();
-  const { activePrompt, prompts, loading: promptsLoading } = useSystemPrompts();
-  const { documents, loading: documentsLoading } = useCompanyDocuments();
-  const { conversations, stats, loading: automationLoading } = useWhatsappAutomation(tenantId);
+  const { activeAgent, agents, loading: agentsLoading, loadAgents } = useAIAgents();
+  const { activePrompt, prompts, loading: promptsLoading, loadPrompts } = useSystemPrompts();
+  const { documents, loading: documentsLoading, loadDocuments } = useCompanyDocuments();
+  const { conversations, stats, loading: automationLoading, loadData } = useWhatsappAutomation(tenantId);
   const { connectionInfo, loading: limitsLoading } = useConnectionLimits();
 
   // Estado do sistema
@@ -51,10 +36,9 @@ export const AutomationDashboard: React.FC<AutomationDashboardProps> = ({ tenant
     ai_agent: false,
     prompts: false,
     documents: false,
-    protection: true // Sempre ativo
+    protection: true
   });
 
-  // Verificar status dos sistemas
   useEffect(() => {
     setSystemStatus({
       automation: !!stats && stats.total_messages > 0,
@@ -66,252 +50,169 @@ export const AutomationDashboard: React.FC<AutomationDashboardProps> = ({ tenant
   }, [stats, activeAgent, activePrompt, documents]);
 
   const StatusCard = ({ title, status, icon: Icon, description }: any) => (
-    <Card className="relative">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <div className="flex items-center space-x-2">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          <Badge variant={status ? "default" : "secondary"}>
+    <div className="bg-white p-5 rounded-2xl border-2 border-gray-100 relative group hover:border-blue-500/20 transition-all">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">{title}</h4>
+        <div className="flex items-center gap-2">
+          <span className="material-icons-round text-gray-400 text-sm">{Icon}</span>
+          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase ${status ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
             {status ? "Ativo" : "Inativo"}
-          </Badge>
+          </span>
         </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xs text-muted-foreground">{description}</p>
-        {status && (
-          <div className="absolute top-2 right-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      <p className="text-xs text-gray-600">{description}</p>
+      {status && (
+        <div className="absolute top-2 right-2">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+        </div>
+      )}
+    </div>
   );
 
   const QuickStats = () => (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Mensagens Hoje</CardTitle>
-          <MessageCircle className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats?.total_messages || 0}</div>
-          <p className="text-xs text-muted-foreground">
-            {stats?.automation_rate || 0}% automatizadas
-          </p>
-        </CardContent>
-      </Card>
+      <div className="bg-white p-6 rounded-2xl border-2 border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-medium text-gray-500">Mensagens Hoje</h4>
+          <span className="material-icons-round text-blue-500">forum</span>
+        </div>
+        <div className="text-3xl font-bold text-gray-900">{stats?.total_messages || 0}</div>
+        <p className="text-xs text-green-600 mt-1 font-medium">{stats?.automation_rate || 0}% automatizadas</p>
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Conversas Ativas</CardTitle>
-          <Users className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats?.active_conversations || 0}</div>
-          <p className="text-xs text-muted-foreground">
-            {conversations.filter(c => c.status === 'waiting_human').length} aguardando humano
-          </p>
-        </CardContent>
-      </Card>
+      <div className="bg-white p-6 rounded-2xl border-2 border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-medium text-gray-500">Conversas Ativas</h4>
+          <span className="material-icons-round text-purple-500">group</span>
+        </div>
+        <div className="text-3xl font-bold text-gray-900">{stats?.active_conversations || 0}</div>
+        <p className="text-xs text-purple-600 mt-1 font-medium">
+          {conversations.filter(c => c.status === 'waiting_human').length} aguardando humano
+        </p>
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Documentos RAG</CardTitle>
-          <FileText className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{documents.length}</div>
-          <p className="text-xs text-muted-foreground">
-            {documents.filter(d => d.status === 'ready').length} prontos para uso
-          </p>
-        </CardContent>
-      </Card>
+      <div className="bg-white p-6 rounded-2xl border-2 border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-medium text-gray-500">Documentos RAG</h4>
+          <span className="material-icons-round text-orange-500">description</span>
+        </div>
+        <div className="text-3xl font-bold text-gray-900">{documents.length}</div>
+        <p className="text-xs text-orange-600 mt-1 font-medium">
+          {documents.filter(d => d.status === 'ready').length} ativos
+        </p>
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Conexões</CardTitle>
-          <Zap className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">
-            {connectionInfo?.whatsapp_connections_used || 0}/{connectionInfo?.whatsapp_connection_limit || 2}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {connectionInfo?.remaining_connections || 0} disponíveis
-          </p>
-        </CardContent>
-      </Card>
+      <div className="bg-white p-6 rounded-2xl border-2 border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-medium text-gray-500">Conexões</h4>
+          <span className="material-icons-round text-yellow-500">bolt</span>
+        </div>
+        <div className="text-3xl font-bold text-gray-900">
+          {connectionInfo?.whatsapp_connections_used || 0}/{connectionInfo?.whatsapp_connection_limit || 2}
+        </div>
+        <p className="text-xs text-gray-400 mt-1 font-medium">{connectionInfo?.remaining_connections || 0} disponíveis</p>
+      </div>
     </div>
   );
 
+  const TABS = [
+    { id: 'overview', label: 'Visão Geral', icon: 'dashboard' },
+    { id: 'conversations', label: 'Conversas', icon: 'chat' },
+    { id: 'ai-agents', label: 'Agentes IA', icon: 'smart_toy' },
+    { id: 'prompts', label: 'Prompts', icon: 'psychology' },
+    { id: 'documents', label: 'Documentos', icon: 'description' },
+    { id: 'settings', label: 'Ajustes', icon: 'settings' },
+  ];
+
   return (
-    <div className="flex-1 space-y-6 p-6">
+    <div className="flex-1 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Automação WhatsApp</h2>
-        <div className="flex items-center space-x-2">
-          <Badge variant={Object.values(systemStatus).every(Boolean) ? "default" : "secondary"}>
-            {Object.values(systemStatus).every(Boolean) ? "Sistema Ativo" : "Configuração Necessária"}
-          </Badge>
-          <Button variant="outline" size="sm">
-            <Eye className="mr-2 h-4 w-4" />
-            Monitorar
-          </Button>
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900">Automação WhatsApp</h2>
+          <p className="text-gray-500">Gerencie a inteligência do seu atendimento</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${Object.values(systemStatus).every(Boolean) ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+            {Object.values(systemStatus).every(Boolean) ? "Sistema Operacional" : "Atenção Requerida"}
+          </span>
+          <Button variant="secondary" icon="visibility">Monitorar</Button>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-          <TabsTrigger value="conversations">Conversas</TabsTrigger>
-          <TabsTrigger value="ai-agents">Agentes IA</TabsTrigger>
-          <TabsTrigger value="prompts">Prompts</TabsTrigger>
-          <TabsTrigger value="documents">Documentos</TabsTrigger>
-          <TabsTrigger value="settings">Configurações</TabsTrigger>
-        </TabsList>
+      <div className="flex gap-2 p-1 bg-gray-100 rounded-2xl w-fit">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+              }`}
+          >
+            <span className="material-icons-round text-lg">{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value="overview" className="space-y-6">
-          {/* Status dos Sistemas */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <StatusCard
-              title="Proteção"
-              status={systemStatus.protection}
-              icon={Shield}
-              description="Instâncias críticas protegidas"
-            />
-            <StatusCard
-              title="Agente IA"
-              status={systemStatus.ai_agent}
-              icon={Bot}
-              description={activeAgent?.name || "Nenhum agente ativo"}
-            />
-            <StatusCard
-              title="Prompts"
-              status={systemStatus.prompts}
-              icon={Settings}
-              description={activePrompt?.name || "Nenhum prompt ativo"}
-            />
-            <StatusCard
-              title="Documentos"
-              status={systemStatus.documents}
-              icon={FileText}
-              description={`${documents.length} documentos carregados`}
-            />
-            <StatusCard
-              title="Automação"
-              status={systemStatus.automation}
-              icon={TrendingUp}
-              description="Sistema processando mensagens"
-            />
+      <div className="mt-6">
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              <StatusCard title="Proteção" status={systemStatus.protection} icon="shield" description="Instâncias isoladas" />
+              <StatusCard title="Agente IA" status={systemStatus.ai_agent} icon="smart_toy" description={activeAgent?.name || "Nenhum ativo"} />
+              <StatusCard title="Prompts" status={systemStatus.prompts} icon="settings" description={activePrompt?.name || "Nenhum ativo"} />
+              <StatusCard title="Documentos" status={systemStatus.documents} icon="description" description={`${documents.length} arquivos`} />
+              <StatusCard title="Automação" status={systemStatus.automation} icon="trending_up" description="Processando mensagens" />
+            </div>
+            <QuickStats />
+            <AutomationStatsPanel stats={stats} />
           </div>
+        )}
 
-          {/* Estatísticas Rápidas */}
-          <QuickStats />
+        {activeTab === 'conversations' && (
+          <ConversationPanel conversations={conversations} loading={automationLoading} onRefresh={loadData} />
+        )}
 
-          {/* Painel de Estatísticas */}
-          <AutomationStatsPanel stats={stats} />
-        </TabsContent>
+        {activeTab === 'ai-agents' && (
+          <AIAgentPanel agents={agents} activeAgent={activeAgent} loading={agentsLoading} onRefresh={loadAgents} />
+        )}
 
-        <TabsContent value="conversations">
-          <ConversationPanel
-            conversations={conversations}
-            loading={automationLoading}
-          />
-        </TabsContent>
+        {activeTab === 'prompts' && (
+          <SystemPromptsPanel prompts={prompts} activePrompt={activePrompt} loading={promptsLoading} onRefresh={loadPrompts} />
+        )}
 
-        <TabsContent value="ai-agents">
-          <AIAgentPanel
-            agents={agents}
-            activeAgent={activeAgent}
-            loading={agentsLoading}
-          />
-        </TabsContent>
+        {activeTab === 'documents' && (
+          <DocumentUploadPanel documents={documents} loading={documentsLoading} onRefresh={loadDocuments} />
+        )}
 
-        <TabsContent value="prompts">
-          <SystemPromptsPanel
-            prompts={prompts}
-            activePrompt={activePrompt}
-            loading={promptsLoading}
-          />
-        </TabsContent>
-
-        <TabsContent value="documents">
-          <DocumentUploadPanel
-            documents={documents}
-            loading={documentsLoading}
-          />
-        </TabsContent>
-
-        <TabsContent value="settings" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações do Sistema</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Limites de Conexão</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm">Usado:</span>
-                        <span className="font-medium">{connectionInfo?.whatsapp_connections_used || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm">Limite:</span>
-                        <span className="font-medium">{connectionInfo?.whatsapp_connection_limit || 2}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm">Disponível:</span>
-                        <span className="font-medium text-green-600">
-                          {connectionInfo?.remaining_connections || 0}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Instâncias Protegidas</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center space-x-2">
-                      <Shield className="h-4 w-4 text-green-500" />
-                      <span className="text-sm font-medium">1 Instância Protegida</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      WEBLOCAÇÃO - Sistema protegido
-                    </p>
-                  </CardContent>
-                </Card>
+        {activeTab === 'settings' && (
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="bg-white p-6 rounded-2xl border-2 border-gray-100">
+              <h4 className="font-bold text-gray-900 mb-4">Limites e Cotas</h4>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                  <span className="text-sm text-gray-500">Conexões Usadas</span>
+                  <span className="font-bold">{connectionInfo?.whatsapp_connections_used || 0}/{connectionInfo?.whatsapp_connection_limit || 2}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                  <span className="text-sm text-gray-500">Webhook Status</span>
+                  <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-lg uppercase">Ativo</span>
+                </div>
               </div>
+            </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Webhook Configuration</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Status:</span>
-                      <Badge variant="default">Configurado</Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      URL: https://seu-dominio.com/webhooks/whatsapp/
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Events: connection, messages, messages_update
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            <div className="bg-white p-6 rounded-2xl border-2 border-gray-100">
+              <h4 className="font-bold text-gray-900 mb-4">Segurança</h4>
+              <div className="flex items-center gap-3 p-4 bg-green-50 text-green-700 rounded-2xl border-2 border-green-100">
+                <span className="material-icons-round text-4xl">shield</span>
+                <div>
+                  <p className="text-sm font-bold">Anti-Bloqueio Ativado</p>
+                  <p className="text-xs opacity-80">Delay inteligente e rotação de instâncias</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

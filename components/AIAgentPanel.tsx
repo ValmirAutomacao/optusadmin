@@ -1,25 +1,9 @@
 // Painel de Gerenciamento de Agentes IA
 import React, { useState } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import {
-  Bot,
-  Plus,
-  Settings,
-  Trash2,
-  Play,
-  Pause,
-  DollarSign,
-  Zap,
-  AlertTriangle,
-  CheckCircle2
-} from 'lucide-react';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import Modal from './ui/Modal';
+
 
 import { AIAgentService, AI_PROVIDERS, type AIAgentConfig } from '../lib/aiAgents';
 
@@ -27,12 +11,14 @@ interface AIAgentPanelProps {
   agents: AIAgentConfig[];
   activeAgent: AIAgentConfig | null;
   loading: boolean;
+  onRefresh?: () => void;
 }
 
 export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({
   agents,
   activeAgent,
-  loading
+  loading,
+  onRefresh
 }) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -41,7 +27,6 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({
   const [testResponse, setTestResponse] = useState('');
   const [testing, setTesting] = useState(false);
 
-  // Formulário para novo agente
   const [newAgentForm, setNewAgentForm] = useState({
     name: '',
     provider: 'openrouter' as 'openrouter' | 'openai',
@@ -69,40 +54,34 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({
       await AIAgentService.createAgent(newAgentForm);
       setIsCreateModalOpen(false);
       resetForm();
-      // Recarregar agentes seria feito via callback do parent
+      onRefresh?.();
     } catch (error) {
-      console.error('Erro ao criar agente:', error);
-      alert('Erro ao criar agente: ' + (error as Error).message);
+      alert('Erro ao criar agente');
     }
   };
 
   const handleActivateAgent = async (agentId: string) => {
     try {
       await AIAgentService.activateAgent(agentId);
-      // Recarregar dados seria feito via callback do parent
+      onRefresh?.();
     } catch (error) {
-      console.error('Erro ao ativar agente:', error);
       alert('Erro ao ativar agente');
     }
   };
 
   const handleDeleteAgent = async (agentId: string, agentName: string) => {
-    if (!confirm(`Tem certeza que deseja deletar o agente "${agentName}"?`)) {
-      return;
-    }
-
-    try {
-      await AIAgentService.deleteAgent(agentId);
-      // Recarregar dados seria feito via callback do parent
-    } catch (error) {
-      console.error('Erro ao deletar agente:', error);
-      alert('Erro ao deletar agente');
+    if (confirm(`Tem certeza que deseja deletar o agente "${agentName}"?`)) {
+      try {
+        await AIAgentService.deleteAgent(agentId);
+        onRefresh?.();
+      } catch (error) {
+        alert('Erro ao deletar agente');
+      }
     }
   };
 
   const handleTestAgent = async () => {
     if (!activeAgent || !testMessage.trim()) return;
-
     setTesting(true);
     try {
       const response = await AIAgentService.processMessage(testMessage, {
@@ -110,7 +89,6 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({
         area_atuacao: 'Teste',
         servicos_disponiveis: 'Teste'
       });
-
       setTestResponse(response.success ? response.message || '' : response.error || '');
     } catch (error) {
       setTestResponse('Erro no teste: ' + (error as Error).message);
@@ -119,302 +97,106 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({
     }
   };
 
-  const getProviderBadge = (provider: string) => {
-    const colors = {
-      openrouter: 'bg-purple-100 text-purple-700',
-      openai: 'bg-green-100 text-green-700'
-    };
-    return colors[provider as keyof typeof colors] || 'bg-gray-100 text-gray-700';
-  };
-
-  const getStatusBadge = (isActive: boolean) => (
-    <Badge variant={isActive ? "default" : "secondary"}>
-      {isActive ? (
-        <><CheckCircle2 className="w-3 h-3 mr-1" /> Ativo</>
-      ) : (
-        <><Pause className="w-3 h-3 mr-1" /> Inativo</>
-      )}
-    </Badge>
-  );
-
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center p-8">
-          <div className="text-center">
-            <Bot className="mx-auto h-8 w-8 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Carregando agentes IA...</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (loading) return <div className="p-8 text-center text-gray-500">Carregando agentes IA...</div>;
 
   return (
     <div className="space-y-6">
-      {/* Header com ações */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Agentes IA</h3>
-          <p className="text-sm text-muted-foreground">
-            Configure e gerencie seus agentes de IA para automação
-          </p>
+          <h3 className="text-xl font-bold">Agentes IA</h3>
+          <p className="text-sm text-gray-500">Configure e gerencie seus agentes de IA</p>
         </div>
-        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Agente
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Criar Novo Agente IA</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="agent-name">Nome do Agente</Label>
-                  <Input
-                    id="agent-name"
-                    value={newAgentForm.name}
-                    onChange={(e) => setNewAgentForm(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Ex: Assistente Principal"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="agent-provider">Provedor</Label>
-                  <Select
-                    value={newAgentForm.provider}
-                    onValueChange={(value: 'openrouter' | 'openai') =>
-                      setNewAgentForm(prev => ({ ...prev, provider: value, model: '' }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter (Testes)</SelectItem>
-                      <SelectItem value="openai">OpenAI (Produção)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="agent-model">Modelo</Label>
-                  <Select
-                    value={newAgentForm.model}
-                    onValueChange={(value) => setNewAgentForm(prev => ({ ...prev, model: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o modelo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AI_PROVIDERS[newAgentForm.provider].models.map((model) => (
-                        <SelectItem key={model} value={model}>
-                          {model}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="agent-api-key">API Key</Label>
-                  <Input
-                    id="agent-api-key"
-                    type="password"
-                    value={newAgentForm.api_key}
-                    onChange={(e) => setNewAgentForm(prev => ({ ...prev, api_key: e.target.value }))}
-                    placeholder="Sua API key"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="agent-temperature">Temperature (0-2)</Label>
-                  <Input
-                    id="agent-temperature"
-                    type="number"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={newAgentForm.temperature}
-                    onChange={(e) => setNewAgentForm(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="agent-max-tokens">Max Tokens</Label>
-                  <Input
-                    id="agent-max-tokens"
-                    type="number"
-                    min="100"
-                    max="8000"
-                    value={newAgentForm.max_tokens}
-                    onChange={(e) => setNewAgentForm(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="agent-instructions">Instruções Customizadas (Opcional)</Label>
-                <Textarea
-                  id="agent-instructions"
-                  value={newAgentForm.custom_instructions}
-                  onChange={(e) => setNewAgentForm(prev => ({ ...prev, custom_instructions: e.target.value }))}
-                  placeholder="Instruções específicas para este agente..."
-                  rows={4}
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleCreateAgent} disabled={!newAgentForm.name || !newAgentForm.model || !newAgentForm.api_key}>
-                  Criar Agente
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setIsCreateModalOpen(true)} icon="add">Novo Agente</Button>
       </div>
 
-      {/* Lista de agentes */}
       <div className="grid gap-4">
-        {agents.length === 0 ? (
-          <Card>
-            <CardContent className="flex items-center justify-center p-8">
-              <div className="text-center">
-                <Bot className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Nenhum agente configurado</h3>
-                <p className="text-muted-foreground mb-4">
-                  Crie seu primeiro agente IA para começar a automação
-                </p>
-                <Button onClick={() => setIsCreateModalOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Criar Primeiro Agente
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          agents.map((agent) => (
-            <Card key={agent.id} className={agent.active ? 'ring-2 ring-blue-500' : ''}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <Bot className="h-8 w-8 text-blue-500" />
-                    <div>
-                      <h4 className="font-semibold">{agent.name}</h4>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <Badge className={getProviderBadge(agent.provider)}>
-                          {AI_PROVIDERS[agent.provider].name}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">{agent.model}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    {getStatusBadge(agent.active)}
-
-                    {!agent.active && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleActivateAgent(agent.id)}
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                    )}
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setEditingAgent(agent);
-                        setIsEditModalOpen(true);
-                      }}
-                    >
-                      <Settings className="h-4 w-4" />
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteAgent(agent.id, agent.name)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+        {agents.map((agent) => (
+          <div key={agent.id} className={`p-5 rounded-2xl border-2 transition-all ${agent.active ? 'border-blue-500 bg-blue-50/30' : 'border-gray-100 bg-white'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
+                  <span className="material-icons-round text-2xl">smart_toy</span>
                 </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Temperature:</span>
-                    <span className="ml-2 font-medium">{agent.temperature}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Max Tokens:</span>
-                    <span className="ml-2 font-medium">{agent.max_tokens}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Criado em:</span>
-                    <span className="ml-2 font-medium">
-                      {new Date(agent.created_at).toLocaleDateString()}
+                <div>
+                  <h4 className="font-bold text-gray-900">{agent.name}</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase ${agent.provider === 'openai' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                      {AI_PROVIDERS[agent.provider].name}
                     </span>
+                    <span className="text-xs text-gray-400">{agent.model}</span>
                   </div>
                 </div>
+              </div>
 
-                {agent.custom_instructions && (
-                  <div className="mt-3 p-2 bg-muted rounded text-sm">
-                    <strong>Instruções:</strong> {agent.custom_instructions.substring(0, 100)}
-                    {agent.custom_instructions.length > 100 && '...'}
-                  </div>
+              <div className="flex items-center gap-2">
+                {agent.active ? (
+                  <span className="flex items-center gap-1 text-xs text-green-600 font-bold"><span className="material-icons-round text-sm">check_circle</span> Ativo</span>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => handleActivateAgent(agent.id)} icon="play_arrow">Ativar</Button>
                 )}
-              </CardContent>
-            </Card>
-          ))
-        )}
+                <Button variant="secondary" size="sm" onClick={() => { setEditingAgent(agent); setIsEditModalOpen(true); }} icon="settings" />
+                <Button variant="secondary" size="sm" onClick={() => handleDeleteAgent(agent.id, agent.name)} className="!text-red-500" icon="delete" />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Teste de agente ativo */}
       {activeAgent && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Zap className="mr-2 h-5 w-5" />
-              Testar Agente Ativo
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="test-message">Mensagem de Teste</Label>
-              <Textarea
-                id="test-message"
-                value={testMessage}
-                onChange={(e) => setTestMessage(e.target.value)}
-                placeholder="Digite uma mensagem para testar a resposta da IA..."
-                rows={3}
-              />
+        <div className="bg-white p-6 rounded-2xl border-2 border-dashed border-gray-200 space-y-4">
+          <h4 className="flex items-center gap-2 font-bold text-gray-900"><span className="material-icons-round text-yellow-500">bolt</span> Testar Agente Ativo</h4>
+          <textarea
+            className="w-full p-4 bg-gray-50 border-2 border-transparent rounded-2xl text-sm outline-none focus:bg-white focus:border-blue-500/20 transition-all resize-none"
+            placeholder="Digite uma mensagem para testar..."
+            rows={3}
+            value={testMessage}
+            onChange={e => setTestMessage(e.target.value)}
+          />
+          <Button onClick={handleTestAgent} loading={testing} disabled={!testMessage.trim()}>Testar</Button>
+          {testResponse && (
+            <div className="p-4 bg-gray-50 rounded-2xl">
+              <span className="text-xs font-bold text-gray-400 uppercase">Resposta da IA:</span>
+              <p className="mt-2 text-sm text-gray-700">{testResponse}</p>
             </div>
-
-            <Button onClick={handleTestAgent} disabled={!testMessage.trim() || testing}>
-              {testing ? 'Processando...' : 'Testar'}
-            </Button>
-
-            {testResponse && (
-              <div className="p-3 bg-muted rounded">
-                <Label className="text-sm font-medium">Resposta da IA:</Label>
-                <p className="mt-1 text-sm">{testResponse}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
+
+      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Novo Agente IA">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Nome do Agente" value={newAgentForm.name} onChange={e => setNewAgentForm({ ...newAgentForm, name: e.target.value })} />
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-900 uppercase ml-1">Provedor</label>
+              <select className="w-full p-3 bg-gray-50 rounded-xl border-none outline-none focus:ring-2 focus:ring-blue-500/10" value={newAgentForm.provider} onChange={e => setNewAgentForm({ ...newAgentForm, provider: e.target.value as any, model: '' })}>
+                <option value="openrouter">OpenRouter</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-900 uppercase ml-1">Modelo</label>
+              <select className="w-full p-3 bg-gray-50 rounded-xl border-none outline-none focus:ring-2 focus:ring-blue-500/10" value={newAgentForm.model} onChange={e => setNewAgentForm({ ...newAgentForm, model: e.target.value })}>
+                <option value="">Selecione...</option>
+                {AI_PROVIDERS[newAgentForm.provider].models.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <Input label="API Key" type="password" value={newAgentForm.api_key} onChange={e => setNewAgentForm({ ...newAgentForm, api_key: e.target.value })} />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-900 uppercase ml-1">Instruções Customizadas</label>
+            <textarea className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500/10 resize-none h-32" value={newAgentForm.custom_instructions} onChange={e => setNewAgentForm({ ...newAgentForm, custom_instructions: e.target.value })} />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsCreateModalOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCreateAgent}>Criar Agente</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

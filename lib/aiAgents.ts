@@ -180,13 +180,13 @@ export class AIAgentService {
         .select('*')
         .eq('tenant_id', userData.tenant_id)
         .eq('active', true)
-        .single();
+        .limit(1);
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         throw error;
       }
 
-      return data;
+      return data && data.length > 0 ? data[0] : null;
 
     } catch (error) {
       console.error('Erro ao obter agente ativo:', error);

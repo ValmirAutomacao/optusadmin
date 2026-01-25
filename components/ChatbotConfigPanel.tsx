@@ -62,13 +62,40 @@ export function ChatbotConfigPanel({
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [massSyncing, setMassSyncing] = useState(false);
     const [existingConfig, setExistingConfig] = useState<AgentConfigData | null>(null);
     const [availablePrompts, setAvailablePrompts] = useState<{ id: string; name: string }[]>([]);
+    const [availableInstances, setAvailableInstances] = useState<{ id: string; name: string; status: string }[]>([]);
+    const [selectedInstanceId, setSelectedInstanceId] = useState<string>(instanceId === 'global' ? '' : instanceId);
 
     useEffect(() => {
         loadConfig();
         loadPrompts();
+        if (!isGlobal) loadInstances();
     }, [instanceId, isGlobal]);
+
+    const loadInstances = async () => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: userData } = await supabase
+                .from('users')
+                .select('tenant_id')
+                .eq('auth_id', user.id)
+                .single();
+
+            if (userData?.tenant_id) {
+                const { data } = await supabase
+                    .from('whatsapp_instances')
+                    .select('id, name, status')
+                    .eq('tenant_id', userData.tenant_id);
+                if (data) setAvailableInstances(data);
+            }
+        } catch (error) {
+            console.error('Failed to load instances:', error);
+        }
+    };
 
     const loadPrompts = async () => {
         try {
@@ -118,7 +145,7 @@ export function ChatbotConfigPanel({
                 // Salvar config de instância específica
                 savedConfig = await agentConfigService.upsertAgentConfig({
                     ...config,
-                    instance_id: instanceId,
+                    instance_id: selectedInstanceId || null,
                 } as any);
             }
 
@@ -157,6 +184,38 @@ export function ChatbotConfigPanel({
         }
     };
 
+    const handleMassSync = async () => {
+        if (!confirm('Deseja aplicar estas configurações técnicas (Modelo, Provedor, Prompt) a TODOS os chatbots de clientes?')) {
+            return;
+        }
+
+        try {
+            setMassSyncing(true);
+            const { data: configs } = await supabase
+                .from('uazapi_agent_configs')
+                .select('id')
+                .eq('is_global', false);
+
+            if (!configs || configs.length === 0) {
+                alert('Nenhum chatbot de cliente encontrado para sincronizar.');
+                return;
+            }
+
+            let successCount = 0;
+            for (const c of configs) {
+                const res = await uazapiChatbotService.syncAgentToUazapi(c.id);
+                if (res.success) successCount++;
+            }
+
+            alert(`${successCount} de ${configs.length} chatbots foram atualizados com o novo template global.`);
+        } catch (error) {
+            console.error('Mass sync failed:', error);
+            alert('Erro durante a sincronização em massa');
+        } finally {
+            setMassSyncing(false);
+        }
+    };
+
     const handleToggleActive = async (active: boolean) => {
         setConfig(prev => ({ ...prev, is_active: active }));
 
@@ -186,128 +245,135 @@ export function ChatbotConfigPanel({
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <span className="text-2xl">🤖</span>
+                    <span className="text-3xl">🎯</span>
                     <div>
-                        <h3 className="text-lg font-semibold text-gray-900">Configuração do Chatbot IA</h3>
-                        <p className="text-sm text-gray-500">Configure o assistente virtual para {instanceName}</p>
+                        <h3 className="text-lg font-bold text-slate-800">Master Template de Inteligência</h3>
+                        <p className="text-sm text-slate-500">Configurações técnicas herdadas por todas as empresas</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <span className="text-sm font-medium text-gray-700">Ativo</span>
-                        <button
-                            onClick={() => handleToggleActive(!config.is_active)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${config.is_active ? 'bg-blue-600' : 'bg-gray-200'
-                                }`}
-                        >
-                            <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${config.is_active ? 'translate-x-6' : 'translate-x-1'
-                                    }`}
-                            />
-                        </button>
-                    </label>
-                    {existingConfig && (
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${(existingConfig as any).sync_status === 'synced' ? 'bg-green-100 text-green-800' :
-                            (existingConfig as any).sync_status === 'error' ? 'bg-red-100 text-red-800' :
-                                'bg-yellow-100 text-yellow-800'
-                            }`}>
-                            {(existingConfig as any).sync_status === 'synced' ? '✅ Sincronizado' :
-                                (existingConfig as any).sync_status === 'error' ? '❌ Erro' :
-                                    '⏳ Pendente'}
-                        </span>
-                    )}
-                </div>
+                {isGlobal && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 font-bold text-xs uppercase tracking-widest">
+                        <span className="material-icons-round text-sm">public</span>
+                        Configuração Global
+                    </div>
+                )}
             </div>
 
-            {/* Seção: Provedor e Modelo */}
-            <div className="space-y-4">
-                <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    ⚙️ Provedor de IA
-                </h4>
-
-                <div className="grid grid-cols-2 gap-4">
+            {/* Seção: Seleção de Instância (Apenas se não for global) */}
+            {!isGlobal && (
+                <div className="space-y-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
+                    <h4 className="text-sm font-medium text-blue-800 flex items-center gap-2">
+                        📱 Vínculo com WhatsApp
+                    </h4>
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-900 uppercase tracking-widest">Provedor</label>
+                        <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
+                            Selecionar WhatsApp para este Chatbot
+                        </label>
                         <select
-                            value={config.provider}
-                            onChange={(e) => {
-                                setConfig(prev => ({
-                                    ...prev,
-                                    provider: e.target.value,
-                                    model: PROVIDER_MODELS[e.target.value]?.[0]?.value || '',
-                                }));
-                            }}
-                            className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                            value={selectedInstanceId}
+                            onChange={(e) => setSelectedInstanceId(e.target.value)}
+                            className="w-full px-4 py-3 bg-white border-2 border-transparent rounded-xl text-sm font-medium focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
                         >
-                            <option value="openrouter">OpenRouter (Multi-modelo)</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="anthropic">Anthropic</option>
-                            <option value="gemini">Google Gemini</option>
-                        </select>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-900 uppercase tracking-widest">Modelo</label>
-                        <select
-                            value={config.model}
-                            onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
-                            className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
-                        >
-                            {availableModels.map((model) => (
-                                <option key={model.value} value={model.value}>{model.label}</option>
+                            <option value="">Selecione um WhatsApp...</option>
+                            {availableInstances.map(inst => (
+                                <option key={inst.id} value={inst.id}>
+                                    {inst.name} ({inst.status})
+                                </option>
                             ))}
                         </select>
+                        <p className="text-xs text-blue-600 ml-1">
+                            ⚠️ Apenas o WhatsApp selecionado usará estas configurações de IA.
+                            Instâncias críticas não devem ser selecionadas aqui.
+                        </p>
                     </div>
                 </div>
+            )}
 
-                <Input
-                    label="Chave de API"
-                    type="password"
-                    placeholder="sk-... ou sua chave de API"
-                    value={config.api_key || ''}
-                    onChange={(e) => setConfig(prev => ({ ...prev, api_key: e.target.value }))}
-                    icon="key"
-                />
-                <p className="text-xs text-gray-500 ml-1">
-                    {config.provider === 'openrouter' ? 'Obtenha em openrouter.ai/keys' : `Obtenha no painel do ${config.provider}`}
-                </p>
-            </div>
+            {/* Seção: Configurações Técnicas (Apenas para o Developer/Global) */}
+            {isGlobal && (
+                <>
+                    <div className="space-y-4">
+                        <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                            ⚙️ Provedor de IA
+                        </h4>
 
-            <hr className="border-gray-200" />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-900 uppercase tracking-widest">Provedor</label>
+                                <select
+                                    value={config.provider}
+                                    onChange={(e) => {
+                                        setConfig(prev => ({
+                                            ...prev,
+                                            provider: e.target.value,
+                                            model: PROVIDER_MODELS[e.target.value]?.[0]?.value || '',
+                                        }));
+                                    }}
+                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                                >
+                                    <option value="openrouter">OpenRouter (Multi-modelo)</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="gemini">Google Gemini</option>
+                                </select>
+                            </div>
 
-            {/* Seção: Prompt de Sistema */}
-            <div className="space-y-4">
-                <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    🧠 Cérebro do Assistente (Prompt)
-                </h4>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-900 uppercase tracking-widest">Modelo</label>
+                                <select
+                                    value={config.model}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
+                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                                >
+                                    {availableModels.map((model) => (
+                                        <option key={model.value} value={model.value}>{model.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
 
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
-                        Selecionar Prompt do Sistema
-                    </label>
-                    <select
-                        value={config.system_prompt_id || ''}
-                        onChange={(e) => setConfig(prev => ({ ...prev, system_prompt_id: e.target.value || undefined }))}
-                        className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
-                    >
-                        <option value="">Nenhum (Usar instruções manuais abaixo)</option>
-                        {availablePrompts.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
+                        <Input
+                            label="Chave de API"
+                            type="password"
+                            placeholder="sk-... ou sua chave de API"
+                            value={config.api_key_encrypted || ''}
+                            onChange={(e) => setConfig(prev => ({ ...prev, api_key_encrypted: e.target.value }))}
+                            icon="key"
+                        />
+                    </div>
 
-            <hr className="border-gray-200" />
+                    <hr className="border-gray-200" />
+
+                    <div className="space-y-4">
+                        <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                            🧠 Cérebro do Assistente (Prompt)
+                        </h4>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
+                                Selecionar Prompt do Sistema
+                            </label>
+                            <select
+                                value={config.system_prompt_id || ''}
+                                onChange={(e) => setConfig(prev => ({ ...prev, system_prompt_id: e.target.value || undefined }))}
+                                className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                            >
+                                <option value="">Nenhum (Usar instruções manuais abaixo)</option>
+                                {availablePrompts.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr className="border-gray-200" />
+                </>
+            )}
 
             {/* Seção: Nome e Instruções */}
             <div className="space-y-4">
-                <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    💬 Comportamento do Assistente
-                </h4>
-
                 <Input
-                    label="Nome do Assistente"
+                    label="Nome Padrão do Assistente"
                     placeholder="Ex: Atendente Virtual"
                     value={config.name || ''}
                     onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
@@ -316,10 +382,10 @@ export function ChatbotConfigPanel({
 
                 <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
-                        Instruções Personalizadas
+                        Instruções Base (Global)
                     </label>
                     <textarea
-                        placeholder="Instruções específicas para o assistente..."
+                        placeholder="Injetado como base para todos os assistentes..."
                         rows={4}
                         value={config.custom_instructions || ''}
                         onChange={(e) => setConfig(prev => ({ ...prev, custom_instructions: e.target.value }))}
@@ -327,82 +393,105 @@ export function ChatbotConfigPanel({
                     />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
-                            Temperatura ({config.temperature || 0.7})
-                        </label>
-                        <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={config.temperature || 0.7}
-                            onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                            className="w-full"
-                        />
-                        <div className="flex justify-between text-xs text-gray-500">
-                            <span>Preciso</span>
-                            <span>Criativo</span>
+                {/* Seção: Parâmetros de Criatividade (Apenas Developer) */}
+                {isGlobal && (
+                    <>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">
+                                    Temperatura ({config.temperature || 0.7})
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    value={config.temperature || 0.7}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                                    className="w-full"
+                                />
+                                <div className="flex justify-between text-xs text-gray-500">
+                                    <span>Preciso</span>
+                                    <span>Criativo</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">Max Tokens</label>
+                                <select
+                                    value={String(config.max_tokens || 1024)}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
+                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                                >
+                                    <option value="512">512 (Curto)</option>
+                                    <option value="1024">1024 (Normal)</option>
+                                    <option value="2048">2048 (Longo)</option>
+                                    <option value="4096">4096 (Muito Longo)</option>
+                                </select>
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-900 uppercase tracking-widest ml-1">Max Tokens</label>
-                        <select
-                            value={String(config.max_tokens || 1024)}
-                            onChange={(e) => setConfig(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
-                            className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl text-sm font-medium focus:bg-white focus:border-blue-500/20 focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
-                        >
-                            <option value="512">512 (Curto)</option>
-                            <option value="1024">1024 (Normal)</option>
-                            <option value="2048">2048 (Longo)</option>
-                            <option value="4096">4096 (Muito Longo)</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <hr className="border-gray-200" />
-
-            {/* Aviso de Limitações */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                <h4 className="text-sm font-medium text-yellow-800 mb-1">⚠️ Limitação do Chatbot</h4>
-                <p className="text-sm text-yellow-700">
-                    O chatbot nativo da Uazapi não processa mensagens de áudio nem imagem.
-                    Esses tipos de mensagem serão ignorados pelo assistente.
-                </p>
+                        <hr className="border-gray-200" />
+                    </>
+                )}
             </div>
 
             <hr className="border-gray-200" />
 
             {/* Botões de Ação */}
-            <div className="flex justify-between">
-                {!isGlobal ? (
-                    <Button
-                        variant="secondary"
-                        onClick={handleSync}
-                        disabled={syncing || !existingConfig?.id}
-                        loading={syncing}
-                        icon="sync"
-                    >
-                        Sincronizar com Uazapi
-                    </Button>
+            <div className="flex justify-between items-center gap-4">
+                {isGlobal ? (
+                    <>
+                        <div className="text-sm text-gray-500 flex items-center gap-2">
+                            <span className="text-lg">💡</span>
+                            Configurações técnicas aplicadas a todos os clientes durante a sincronização.
+                        </div>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="secondary"
+                                onClick={handleMassSync}
+                                disabled={massSyncing}
+                                loading={massSyncing}
+                                icon="sync_lock"
+                            >
+                                Atualizar Todos os Clientes
+                            </Button>
+                            <Button
+                                onClick={handleSave}
+                                disabled={saving}
+                                loading={saving}
+                                icon="save"
+                            >
+                                Salvar Master Template
+                            </Button>
+                        </div>
+                    </>
                 ) : (
-                    <div className="text-sm text-gray-500 flex items-center gap-2">
-                        <span className="text-lg">💡</span>
-                        Esta config será aplicada a novas instâncias
-                    </div>
+                    <>
+                        <div className="text-sm text-blue-600 flex items-center gap-2">
+                            <span className="text-lg">ℹ️</span>
+                            Sincronize para ativar o assistente no seu WhatsApp.
+                        </div>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="secondary"
+                                onClick={handleSync}
+                                disabled={syncing || !existingConfig?.id}
+                                loading={syncing}
+                                icon="sync"
+                            >
+                                Sincronizar Agora
+                            </Button>
+                            <Button
+                                onClick={handleSave}
+                                disabled={saving}
+                                loading={saving}
+                                icon="save"
+                            >
+                                Salvar Configuração
+                            </Button>
+                        </div>
+                    </>
                 )}
-
-                <Button
-                    onClick={handleSave}
-                    disabled={saving}
-                    loading={saving}
-                    icon="save"
-                >
-                    {isGlobal ? 'Salvar Config Global' : 'Salvar Configuração'}
-                </Button>
             </div>
         </div>
     );

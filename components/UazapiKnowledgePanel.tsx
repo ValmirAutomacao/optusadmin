@@ -198,12 +198,12 @@ export function UazapiKnowledgePanel({
                     <label>
                         <input
                             type="file"
-                            accept=".txt,.json"
+                            accept=".txt,.json,.pdf"
                             onChange={handleFileUpload}
                             className="hidden"
                         />
                         <Button variant="secondary" disabled={saving} icon="upload">
-                            Importar
+                            Importar Documento
                         </Button>
                     </label>
                     <Button onClick={handleNew} icon="add">
@@ -243,8 +243,8 @@ export function UazapiKnowledgePanel({
                                             {CATEGORIES.find((c) => c.value === item.category)?.label || item.category}
                                         </span>
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${(item as any).is_vectorized ? 'bg-green-100 text-green-800' :
-                                                (item as any).sync_status === 'error' ? 'bg-red-100 text-red-800' :
-                                                    'bg-yellow-100 text-yellow-800'
+                                            (item as any).sync_status === 'error' ? 'bg-red-100 text-red-800' :
+                                                'bg-yellow-100 text-yellow-800'
                                             }`}>
                                             {(item as any).is_vectorized ? '✅ Vetorizado' :
                                                 (item as any).sync_status === 'error' ? '❌ Erro' :

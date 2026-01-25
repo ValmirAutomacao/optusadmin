@@ -8,11 +8,14 @@ import Layout from '../components/Layout';
 import UazapiKnowledgePanel from '../components/UazapiKnowledgePanel';
 import { supabase } from '../lib/supabase';
 import Button from '../components/ui/Button';
+import ChatbotConfigPanel from '../components/ChatbotConfigPanel';
 
 const Conhecimento: React.FC = () => {
     const [isMobile, setIsMobile] = useState(false);
     const [agentConfigId, setAgentConfigId] = useState<string | null>(null);
+    const [instanceToken, setInstanceToken] = useState<string | undefined>(undefined);
     const [loading, setLoading] = useState(true);
+    const [showSettings, setShowSettings] = useState(false);
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -28,15 +31,17 @@ const Conhecimento: React.FC = () => {
     async function loadGlobalAgentConfig() {
         setLoading(true);
 
-        // Buscar config global do chatbot (is_global = true ou instance_id = 'global')
-        const { data } = await supabase
-            .from('uazapi_agent_configs')
-            .select('id')
-            .eq('instance_id', 'global')
-            .single();
+        try {
+            // Importar o service aqui ou no topo
+            const { agentConfigService } = await import('../lib/uazapiChatbot');
+            const agentConfig = await agentConfigService.getAgentConfigForTenant();
 
-        if (data) {
-            setAgentConfigId(data.id);
+            if (agentConfig) {
+                setAgentConfigId(agentConfig.id!);
+                // Opcional: buscar token se vinculado
+            }
+        } catch (error) {
+            console.error('Error loading config:', error);
         }
 
         setLoading(false);
@@ -52,6 +57,30 @@ const Conhecimento: React.FC = () => {
                         Adicione documentos e informações para que o chatbot possa responder melhor
                     </p>
                 </div>
+
+                {agentConfigId && (
+                    <div className="mb-6">
+                        <Button
+                            variant="secondary"
+                            icon={showSettings ? 'expand_less' : 'settings'}
+                            onClick={() => setShowSettings(!showSettings)}
+                        >
+                            {showSettings ? 'Ocultar Configurações' : 'Configurar WhatsApp do Chatbot'}
+                        </Button>
+
+                        {showSettings && (
+                            <div className="mt-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                                <ChatbotConfigPanel
+                                    instanceId=""
+                                    instanceName="Chatbot"
+                                    onConfigChange={() => {
+                                        loadGlobalAgentConfig();
+                                    }}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Conteúdo */}
                 <div className="bg-white rounded-2xl shadow-xl p-6">

@@ -92,7 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           {/* Section: Automação */}
           <div>
-            <p className="text-[10px) font-black text-slate-400 uppercase tracking-[0.2em] mb-4 px-4">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 px-4">
               Automação
             </p>
             <div className="space-y-1">
@@ -101,12 +101,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 label="Whatsapp"
                 active={location.pathname === '/whatsapp'}
                 onClick={() => navigate('/whatsapp')}
-              />
-              <NavItem
-                icon="menu_book"
-                label="Conhecimento"
-                active={location.pathname === '/conhecimento'}
-                onClick={() => navigate('/conhecimento')}
               />
             </div>
           </div>

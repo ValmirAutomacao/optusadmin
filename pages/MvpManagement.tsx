@@ -26,6 +26,9 @@ import ChatbotConfigPanel from '../components/ChatbotConfigPanel';
 import { SystemPromptsPanel } from '../components/SystemPromptsPanel';
 import { useSystemPrompts } from '../lib/systemPrompts';
 import { useAIAgents } from '../lib/aiAgents';
+import { UazapiKnowledgePanel } from '../components/UazapiKnowledgePanel';
+import Modal from '../components/ui/Modal';
+import { agentConfigService } from '../lib/uazapiChatbot';
 
 interface Tenant {
     id: string;
@@ -71,7 +74,7 @@ interface Professional {
     tenant?: { name: string };
 }
 
-type TabType = 'clientes' | 'chatbot';
+type TabType = 'clientes' | 'config-ia' | 'conhecimento';
 
 export default function MvpManagement() {
     const [activeTab, setActiveTab] = useState<TabType>('clientes');
@@ -109,7 +112,8 @@ export default function MvpManagement() {
 
     const tabs = [
         { id: 'clientes' as const, label: 'Clientes', icon: '🏢', count: tenants.length },
-        { id: 'chatbot' as const, label: 'Chatbot IA', icon: '🤖', count: null },
+        { id: 'config-ia' as const, label: 'Configurações IA (Master)', icon: '⚙️', count: null },
+        { id: 'conhecimento' as const, label: 'Base de Conhecimento', icon: '📚', count: null },
     ];
 
     return (
@@ -155,21 +159,61 @@ export default function MvpManagement() {
                             setShowForm={setShowForm}
                         />
                     )}
-                    {activeTab === 'chatbot' && (
-                        <div className="space-y-4">
-                            <ChatbotConfigPanel
-                                instanceId="global"
-                                instanceName="Configuração Global"
-                                isGlobal={true}
-                            />
+                    {activeTab === 'config-ia' && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            {/* Master Template - Configuração Técnica Global */}
+                            <div className="bg-slate-50 rounded-2xl p-8 border border-slate-200">
+                                <div className="mb-6">
+                                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                        <span className="text-3xl">⚙️</span>
+                                        Master Template IA
+                                    </h2>
+                                    <p className="text-slate-500 text-sm mt-1">
+                                        Estas configurações técnicas (Modelo, API Key e Provedor) são <strong>GLOBAIS</strong> e aplicadas a todos os chatbots do sistema.
+                                    </p>
+                                </div>
 
-                            <div className="pt-8 border-t">
-                                <SystemPromptsPanel
-                                    prompts={prompts}
-                                    activePrompt={activePrompt}
-                                    loading={loadingPrompts}
+                                <ChatbotConfigPanel
+                                    instanceId="global"
+                                    instanceName="Configuração Master"
+                                    isGlobal={true}
                                 />
+
+                                <div className="mt-10 pt-8 border-t border-slate-200">
+                                    <SystemPromptsPanel
+                                        prompts={prompts}
+                                        activePrompt={activePrompt}
+                                        loading={loadingPrompts}
+                                    />
+                                </div>
                             </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'conhecimento' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="mb-8">
+                                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                    <span className="text-3xl">📚</span>
+                                    Gestão de Base de Conhecimento
+                                </h2>
+                                <p className="text-slate-500 text-sm mt-1">
+                                    Gerencie o cérebro individual de cada empresa. Adicione PDFs, TXT ou textos manuais por instância.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {tenants.map(tenant => (
+                                    <ChatbotTenantCard key={tenant.id} tenant={tenant} />
+                                ))}
+                            </div>
+
+                            {tenants.length === 0 && (
+                                <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                                    <span className="text-6xl block mb-4">🏢</span>
+                                    <p className="text-slate-400 font-medium">Nenhuma empresa cadastrada para gerenciar conhecimento.</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1026,3 +1070,196 @@ function ProfissionaisTab({
         </div>
     );
 }
+
+// ==================== CHATBOT TENANT CARD ====================
+function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
+    const [config, setConfig] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [showKnowledge, setShowKnowledge] = useState(false);
+
+    useEffect(() => {
+        loadAgentConfig();
+    }, [tenant.id]);
+
+    async function loadAgentConfig() {
+        try {
+            setLoading(true);
+            // Hint explícito da FK para evitar erro 400 se houver ambiguidade no join
+            const { data, error } = await supabase
+                .from('uazapi_agent_configs')
+                .select('*, whatsapp_instances!instance_id(name, status, uazapi_token)')
+                .eq('tenant_id', tenant.id)
+                .eq('is_global', false)
+                .maybeSingle();
+
+            if (error) {
+                console.error('API Error in loadAgentConfig:', error);
+                // Se der erro 400 no join, tentamos sem o join para pelo menos pegar a config básica
+                const { data: fallbackData } = await supabase
+                    .from('uazapi_agent_configs')
+                    .select('*')
+                    .eq('tenant_id', tenant.id)
+                    .eq('is_global', false)
+                    .maybeSingle();
+                if (fallbackData) setConfig(fallbackData);
+            } else {
+                setConfig(data);
+            }
+        } catch (error) {
+            console.error('Error loading tenant agent config:', error);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function handleOpenKnowledge() {
+        if (!config?.id) {
+            // Criar configuração automática se não existir
+            try {
+                const { data: newConfig, error } = await supabase
+                    .from('uazapi_agent_configs')
+                    .insert({
+                        tenant_id: tenant.id,
+                        is_global: false,
+                        name: `Assistente ${tenant.name}`,
+                        provider: 'openrouter',
+                        model: 'google/gemini-flash-1.5',
+                        is_active: false
+                    })
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                setConfig(newConfig);
+                setShowKnowledge(true);
+            } catch (err) {
+                alert('Erro ao inicializar configuração do chatbot');
+            }
+        } else {
+            setShowKnowledge(true);
+        }
+        async function handleSyncAll() {
+            if (!config?.id) return;
+            try {
+                setLoading(true);
+                // 1. Sincronizar Agente (Herda as configs globais de Modelo/API Key)
+                const agentResult = await uazapiChatbotService.syncAgentToUazapi(config.id);
+                if (!agentResult.success) throw new Error(agentResult.error);
+
+                // 2. Sincronizar Trigger (Garante que o robô escute as mensagens)
+                const triggerResult = await uazapiChatbotService.syncTriggerToUazapi(config.id);
+                if (!triggerResult.success) throw new Error(triggerResult.error);
+
+                // 3. Ativar no Supabase
+                await supabase
+                    .from('uazapi_agent_configs')
+                    .update({ is_active: true })
+                    .eq('id', config.id);
+
+                alert('✅ Robô Ativado e Sincronizado com configurações globais!');
+                loadAgentConfig();
+            } catch (err: any) {
+                alert(`Erro na sincronização: ${err.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+
+        if (loading) return <div className="h-44 bg-slate-50 animate-pulse rounded-2xl border border-slate-100"></div>;
+
+        const instance = config?.whatsapp_instances;
+        const isSynced = config?.sync_status === 'synced' && config?.uazapi_agent_id;
+
+        return (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg transition-all group">
+                <div className="flex justify-between items-start mb-4">
+                    <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors">{tenant.name}</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                            {tenant.segment || 'Sem segmento'}
+                        </p>
+                    </div>
+                    <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${config?.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {config?.is_active ? '✅ Ativo' : '⚪ Inativo'}
+                    </div>
+                </div>
+
+                <div className="space-y-2.5 mb-6 py-4 border-y border-slate-50">
+                    <div className="flex items-center gap-3 text-sm text-slate-600">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${instance ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                            <span className="material-icons-round text-lg">link</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-none">WhatsApp</p>
+                            <p className="font-bold truncate">{instance?.name || 'Não vinculado'}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm text-slate-600">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSynced ? 'bg-purple-50 text-purple-600' : 'bg-slate-50 text-slate-400'}`}>
+                            <span className="material-icons-round text-lg">psychology</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-none">Status Sincronização</p>
+                            <p className="font-bold truncate">{isSynced ? 'Sincronizado' : 'Requer Sincronização'}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                    <Button
+                        variant="primary"
+                        className="w-full !rounded-xl !py-4 shadow-md shadow-blue-500/10"
+                        icon="menu_book"
+                        onClick={handleOpenKnowledge}
+                    >
+                        Gerenciar Inteligência
+                    </Button>
+
+                    <Button
+                        variant="secondary"
+                        className={`w-full !rounded-xl ${!instance ? 'opacity-50' : ''}`}
+                        icon="sync_lock"
+                        onClick={handleSyncAll}
+                        disabled={!config?.id || !instance}
+                        loading={loading}
+                    >
+                        Ativar e Sincronizar Robô
+                    </Button>
+
+                    {!instance && (
+                        <p className="text-[9px] text-amber-600 font-bold uppercase text-center mt-1">
+                            ⚠️ Vincule um WhatsApp primeiro
+                        </p>
+                    )}
+                </div>
+
+                {/* Modal de Gestão de Conhecimento */}
+                <Modal
+                    isOpen={showKnowledge}
+                    onClose={() => setShowKnowledge(false)}
+                    title={`Gestão de Inteligência: ${tenant.name}`}
+                    size="xl"
+                >
+                    <div className="p-1 space-y-4">
+                        {!isSynced && (
+                            <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center gap-3 text-amber-800 text-sm">
+                                <span className="material-icons-round text-amber-500">warning</span>
+                                <p>
+                                    <strong>Atenção:</strong> Este robô ainda não foi sincronizado com as configurações globais.
+                                    Ele não responderá mensagens até que você clique em <strong>"Ativar e Sincronizar Robô"</strong> no card da empresa.
+                                </p>
+                            </div>
+                        )}
+                        {config && (
+                            <UazapiKnowledgePanel
+                                agentConfigId={config.id}
+                                instanceToken={instance?.uazapi_token}
+                            />
+                        )}
+                    </div>
+                </Modal>
+            </div>
+        );
+    }
+
