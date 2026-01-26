@@ -10,6 +10,7 @@ import Modal from './ui/Modal';
 
 interface UazapiKnowledgePanelProps {
     agentConfigId: string;
+    tenantId: string;
     instanceToken?: string;
 }
 
@@ -23,6 +24,7 @@ const CATEGORIES = [
 
 export function UazapiKnowledgePanel({
     agentConfigId,
+    tenantId,
     instanceToken,
 }: UazapiKnowledgePanelProps) {
     const [knowledge, setKnowledge] = useState<KnowledgeData[]>([]);
@@ -106,7 +108,7 @@ export function UazapiKnowledgePanel({
                     content: formData.content,
                     category: formData.category,
                     keywords: keywordsArray,
-                });
+                }, tenantId);
                 alert('Conhecimento adicionado!');
             }
 
@@ -157,7 +159,8 @@ export function UazapiKnowledgePanel({
                 agentConfigId,
                 file,
                 file.name.replace(/\.[^/.]+$/, ''),
-                'general'
+                'general',
+                tenantId
             );
             alert('Documento importado com sucesso!');
             loadKnowledge();

@@ -156,7 +156,7 @@ const AppRoutes: React.FC = () => {
               element={
                 <ProtectedRoute
                   isMobile={isMobile}
-                  requiredRole={['developer', 'admin']}
+                  requiredRole={['developer']}
                 >
                   <Conhecimento />
                 </ProtectedRoute>

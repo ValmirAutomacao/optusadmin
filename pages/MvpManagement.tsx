@@ -1260,6 +1260,7 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
                     {config && (
                         <UazapiKnowledgePanel
                             agentConfigId={config.id}
+                            tenantId={tenant.id}
                             instanceToken={instance?.uazapi_token}
                         />
                     )}

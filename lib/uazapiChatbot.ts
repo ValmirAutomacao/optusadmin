@@ -606,7 +606,9 @@ export class AgentConfigService {
       .from('uazapi_agent_configs')
       .select('*')
       .eq('tenant_id', tenantId)
-      .eq('is_global', false);
+      .eq('is_global', false)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (data && data.length > 0) return data[0];
     return this.applyGlobalToTenant(tenantId);
@@ -751,6 +753,7 @@ export class AgentConfigService {
       .from('uazapi_agent_configs')
       .select('*')
       .eq('is_global', true)
+      .order('created_at', { ascending: false })
       .limit(1);
 
     if (error) throw error;
@@ -867,8 +870,8 @@ export class KnowledgeService {
   }
 
   // Criar conhecimento
-  async createKnowledge(knowledge: Omit<KnowledgeData, 'tenant_id' | 'id'>): Promise<KnowledgeData> {
-    const tenantId = await this.getCurrentTenantId();
+  async createKnowledge(knowledge: Omit<KnowledgeData, 'tenant_id' | 'id'>, customTenantId?: string): Promise<KnowledgeData> {
+    const tenantId = customTenantId || await this.getCurrentTenantId();
 
     const { data, error } = await supabase
       .from('uazapi_knowledge')
@@ -881,8 +884,12 @@ export class KnowledgeService {
 
     if (error) throw error;
 
-    // Sincronizar com Uazapi
-    await this.chatbotService.syncKnowledgeToUazapi(data.id);
+    // Sincronizar com Uazapi (tenta, mas não bloqueia se falhar - status mudará para error)
+    try {
+      await this.chatbotService.syncKnowledgeToUazapi(data.id);
+    } catch (e) {
+      console.warn('Initial sync failed, record created with pending/error status');
+    }
 
     return data;
   }
@@ -939,7 +946,8 @@ export class KnowledgeService {
     agentConfigId: string,
     file: File,
     title: string,
-    category: string = 'general'
+    category: string = 'general',
+    customTenantId?: string
   ): Promise<KnowledgeData> {
     // Extrair texto do arquivo
     const content = await this.extractTextFromFile(file);
@@ -951,7 +959,7 @@ export class KnowledgeService {
       content,
       category,
       keywords: [],
-    });
+    }, customTenantId);
   }
 
   // Extrair texto de diferentes tipos de arquivo
