@@ -1188,7 +1188,7 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
                     chatbot_enabled: true,
                     chatbot_ignoreGroups: true,
                     openai_apikey: config.api_key_encrypted, // Sincroniza a chave global para a instância
-                    openai_base_url: isOpenRouter ? 'https://openrouter.ai/api/v1' : '' // Limpa explicitamente se não for OpenRouter
+                    ...(isOpenRouter ? { openai_base_url: 'https://openrouter.ai/api/v1' } : {})
                 }, tenant.id, config.id);
             }
 
