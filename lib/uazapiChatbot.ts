@@ -181,11 +181,23 @@ export class UazapiChatbotService {
   }
 
   // Criar/Editar agente na Uazapi
-  async editAgent(instanceToken: string, agent: Partial<UazapiAgent>): Promise<UazapiAgent> {
+  async editAgent(instanceToken: string, agent: any): Promise<UazapiAgent> {
+    // A API Uazapi v2 exige que o agente seja envelopado em um objeto "agent"
+    const payload = {
+      id: agent.id || '',
+      delete: false,
+      agent: {
+        ...agent
+      }
+    };
+
+    // Remover ID do objeto interno se estiver presente para evitar redundância
+    if (payload.agent.id) delete (payload.agent as any).id;
+
     return this.makeRequest<UazapiAgent>(
       '/agent/edit',
       'POST',
-      agent,
+      payload,
       instanceToken
     );
   }
@@ -230,6 +242,20 @@ export class UazapiChatbotService {
       '/knowledge/delete',
       'POST',
       { id: knowledgeId },
+      instanceToken
+    );
+  }
+
+  // Atualizar configurações globais da instância (Chatbot/OpenAI Key)
+  async updateInstanceChatbotSettings(instanceToken: string, settings: {
+    openai_apikey?: string;
+    chatbot_enabled?: boolean;
+    chatbot_ignoreGroups?: boolean;
+  }): Promise<void> {
+    await this.makeRequest(
+      '/instance/updatechatbotsettings',
+      'POST',
+      settings,
       instanceToken
     );
   }
@@ -395,7 +421,21 @@ export class UazapiChatbotService {
         uazapiAgent.id = agentConfig.uazapi_agent_id;
       }
 
-      // 4. Criar/atualizar agente na Uazapi
+      // 4. Sincronizar também as configurações de instância (OpenAI Key para RAG/Vetorização)
+      // Isso resolve o erro "OpenAI API key is empty in database" durante a vetorização
+      try {
+        await this.updateInstanceChatbotSettings(instanceToken, {
+          openai_apikey: technicalSource.api_key_encrypted,
+          chatbot_enabled: true,
+          chatbot_ignoreGroups: true
+        });
+        console.log('Instance chatbot settings updated successfully');
+      } catch (instError) {
+        console.warn('Non-critical: Failed to update instance chatbot settings:', instError);
+        // Não falhamos a sincronização principal por isso, mas logamos
+      }
+
+      // 5. Criar/atualizar agente na Uazapi
       const uazapiResponse = await this.editAgent(instanceToken, uazapiAgent);
 
       // 4. Atualizar IDs de sincronização no Supabase
