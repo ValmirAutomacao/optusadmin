@@ -1179,7 +1179,20 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
             const triggerResult = await uazapiChatbotService.syncTriggerToUazapi(config.id);
             if (!triggerResult.success) throw new Error(triggerResult.error);
 
-            // 3. Ativar no Supabase
+            // 3. Habilitar Chatbot na Instância (CRÍTICO)
+            if (config.whatsapp_instances?.uazapi_token) {
+                // Se for OpenRouter, precisamos injetar a URL base nas configurações da instância
+                const isOpenRouter = config.provider === 'openrouter';
+
+                await uazapiChatbotService.updateInstanceChatbotSettings(config.whatsapp_instances.uazapi_token, {
+                    chatbot_enabled: true,
+                    chatbot_ignoreGroups: true,
+                    openai_apikey: config.api_key_encrypted, // Sincroniza a chave global para a instância
+                    openai_base_url: isOpenRouter ? 'https://openrouter.ai/api/v1' : undefined
+                });
+            }
+
+            // 4. Ativar no Supabase
             await supabase
                 .from('uazapi_agent_configs')
                 .update({ is_active: true })

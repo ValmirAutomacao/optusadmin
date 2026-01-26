@@ -18,8 +18,6 @@ export interface UazapiAgent {
   provider: 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom';
   model: string;
   apikey?: string;
-  apiUrl?: string; // Campo extra para provedores customizados
-  baseUrl?: string; // Alias comum para apiUrl
   openaikey?: string;
   basePrompt?: string;
   maxTokens?: number;
@@ -266,6 +264,7 @@ export class UazapiChatbotService {
   // Atualizar configurações globais da instância (Chatbot/OpenAI Key)
   async updateInstanceChatbotSettings(instanceToken: string, settings: {
     openai_apikey?: string;
+    openai_base_url?: string;
     chatbot_enabled?: boolean;
     chatbot_ignoreGroups?: boolean;
   }): Promise<void> {
@@ -452,11 +451,7 @@ export class UazapiChatbotService {
         signMessages: false
       };
 
-      // Adicionar endpoint para OpenRouter/Provedores customizados
-      if (technicalSource.provider === 'openrouter') {
-        uazapiAgent.apiUrl = 'https://openrouter.ai/api/v1';
-        uazapiAgent.baseUrl = 'https://openrouter.ai/api/v1';
-      }
+      // Campos extras removidos do Agente pois agora usamos openai_base_url na Instância
 
       if (agentConfig.uazapi_agent_id) {
         uazapiAgent.id = agentConfig.uazapi_agent_id;
@@ -575,11 +570,40 @@ export class UazapiChatbotService {
       };
 
       // 3. Criar/atualizar trigger na Uazapi
-      await this.editTrigger(instanceToken, uazapiTrigger);
+      const triggerResponse = await this.editTrigger(instanceToken, uazapiTrigger);
+
+      // 4. Log
+      await this.logSync(
+        agentConfig.tenant_id,
+        'sync_trigger',
+        '/trigger/edit',
+        uazapiTrigger,
+        triggerResponse,
+        'success',
+        null,
+        agentConfigId
+      );
 
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Tentar logar erro se possível
+      try {
+        const { data: config } = await supabase.from('uazapi_agent_configs').select('tenant_id').eq('id', agentConfigId).single();
+        if (config) {
+          await this.logSync(
+            config.tenant_id,
+            'sync_trigger',
+            '/trigger/edit',
+            null,
+            null,
+            'error',
+            errorMessage,
+            agentConfigId
+          );
+        }
+      } catch (e) { }
+
       return { success: false, error: errorMessage };
     }
   }
@@ -742,14 +766,14 @@ export class UazapiChatbotService {
   // Mapear provider do Supabase para formato Uazapi
   private mapProviderToUazapi(provider: string): 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom' {
     const providerMap: Record<string, 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom'> = {
-      'openrouter': 'custom', // OpenRouter usa custom + apiUrl
+      'openrouter': 'openai', // Mapear para openai e usar openai_base_url na instância
       'openai': 'openai',
       'anthropic': 'anthropic',
       'gemini': 'gemini',
       'google': 'gemini',
       'deepseek': 'deepseek',
     };
-    return providerMap[provider.toLowerCase()] || 'custom';
+    return providerMap[provider.toLowerCase()] || 'openai';
   }
 
   // Registrar log de sincronização
