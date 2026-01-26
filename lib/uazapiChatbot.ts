@@ -339,9 +339,30 @@ export class UazapiChatbotService {
         return { success: true };
       }
 
-      const instanceToken = agentConfig.whatsapp_instances?.uazapi_token;
+      let instanceToken = agentConfig.whatsapp_instances?.uazapi_token;
+
       if (!instanceToken) {
-        throw new Error('Instância de WhatsApp não vinculada. Escolha um WhatsApp para este chatbot.');
+        // Tentar buscar a primeira instância do tenant se não estiver vinculada
+        const { data: firstInstance } = await supabase
+          .from('whatsapp_instances')
+          .select('id, uazapi_token')
+          .eq('tenant_id', agentConfig.tenant_id)
+          .eq('status', 'connected')
+          .limit(1)
+          .maybeSingle();
+
+        if (firstInstance) {
+          instanceToken = firstInstance.uazapi_token;
+          // Salvar o vínculo para futuras operações
+          await supabase
+            .from('uazapi_agent_configs')
+            .update({ instance_id: firstInstance.id })
+            .eq('id', agentConfigId);
+        }
+      }
+
+      if (!instanceToken) {
+        throw new Error('Instância de WhatsApp não vinculada. Certifique-se de que a empresa conectou um WhatsApp em Automação.');
       }
 
       // 3. Preparar dados do agente para Uazapi (Mesclando Global + Local)
@@ -427,7 +448,29 @@ export class UazapiChatbotService {
         throw new Error(`Knowledge not found: ${fetchError?.message}`);
       }
 
-      const instanceToken = knowledge.uazapi_agent_configs?.whatsapp_instances?.uazapi_token;
+      let instanceToken = knowledge.uazapi_agent_configs?.whatsapp_instances?.uazapi_token;
+      if (!instanceToken) {
+        // Tentar buscar instância fallback
+        const { data: firstInstance } = await supabase
+          .from('whatsapp_instances')
+          .select('id, uazapi_token')
+          .eq('tenant_id', knowledge.tenant_id)
+          .eq('status', 'connected')
+          .limit(1)
+          .maybeSingle();
+
+        if (firstInstance) {
+          instanceToken = firstInstance.uazapi_token;
+          // Salva vínculo no agente para não precisar repetir
+          if (knowledge.agent_config_id) {
+            await supabase
+              .from('uazapi_agent_configs')
+              .update({ instance_id: firstInstance.id })
+              .eq('id', knowledge.agent_config_id);
+          }
+        }
+      }
+
       if (!instanceToken) {
         // Marcamos como 'pending_instance' em vez de erro fatal para a UX ser melhor
         await supabase

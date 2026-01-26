@@ -1105,9 +1105,32 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
                     .order('created_at', { ascending: false })
                     .limit(1)
                     .maybeSingle();
-                if (fallbackData) setConfig(fallbackData);
+
+                if (fallbackData) {
+                    // Tentar buscar instância separadamente
+                    const { data: instData } = await supabase
+                        .from('whatsapp_instances')
+                        .select('name, status, uazapi_token')
+                        .eq('tenant_id', tenant.id)
+                        .limit(1)
+                        .maybeSingle();
+
+                    setConfig({ ...fallbackData, whatsapp_instances: instData });
+                }
             } else {
-                setConfig(data);
+                if (data && !data.whatsapp_instances) {
+                    // Config existe mas não tem vínculo. Busca automática.
+                    const { data: instData } = await supabase
+                        .from('whatsapp_instances')
+                        .select('name, status, uazapi_token')
+                        .eq('tenant_id', tenant.id)
+                        .limit(1)
+                        .maybeSingle();
+
+                    setConfig({ ...data, whatsapp_instances: instData });
+                } else {
+                    setConfig(data);
+                }
             }
         } catch (error) {
             console.error('Error loading tenant agent config:', error);
