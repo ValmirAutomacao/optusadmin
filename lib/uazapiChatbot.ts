@@ -370,23 +370,30 @@ export class UazapiChatbotService {
       // Prioridade técnica para o Global (Config do Developer)
       // Prioridade de identificação para o Local (Nome da empresa)
       const technicalSource = globalConfig || agentConfig;
-      const uazapiAgent: Partial<UazapiAgent> = {
-        id: agentConfig.uazapi_agent_id || undefined,
+      const uazapiAgent: any = {
         name: agentConfig.name || technicalSource.name,
         provider: this.mapProviderToUazapi(technicalSource.provider),
         model: technicalSource.model,
         apikey: technicalSource.api_key_encrypted,
+        openaikey: technicalSource.api_key_encrypted, // Campo para RAG
         basePrompt: technicalSource.system_prompts?.system_prompt || technicalSource.custom_instructions || '',
         maxTokens: technicalSource.max_tokens || 1024,
         temperature: Math.round((technicalSource.temperature || 0.7) * 100),
+        diversityLevel: 50,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
         contextTimeWindow_hours: 24,
         contextMaxMessages: 50,
         contextMinMessages: 1,
         readMessages: true,
         typingDelay_seconds: 2,
-        // Campo crítico para vetorização (RAG) na Uazapi
-        openaikey: technicalSource.api_key_encrypted,
+        maxMessageLength: 4000,
+        signMessages: false
       };
+
+      if (agentConfig.uazapi_agent_id) {
+        uazapiAgent.id = agentConfig.uazapi_agent_id;
+      }
 
       // 4. Criar/atualizar agente na Uazapi
       const uazapiResponse = await this.editAgent(instanceToken, uazapiAgent);
@@ -417,6 +424,25 @@ export class UazapiChatbotService {
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Logar a falha para depuração se tivermos os IDs básicos
+      try {
+        const { data: cfg } = await supabase.from('uazapi_agent_configs').select('tenant_id').eq('id', agentConfigId).single();
+        if (cfg) {
+          await this.logSync(
+            cfg.tenant_id,
+            'sync_agent_error',
+            '/agent/edit',
+            { agentConfigId },
+            { error: errorMessage },
+            'error',
+            errorMessage,
+            agentConfigId
+          );
+        }
+      } catch (logErr) {
+        console.error('Failed to log sync error:', logErr);
+      }
 
       // Atualizar status de erro
       await supabase
