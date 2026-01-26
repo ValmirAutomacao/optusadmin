@@ -227,11 +227,20 @@ export class UazapiChatbotService {
   }
 
   // Criar/Editar conhecimento
-  async editKnowledge(instanceToken: string, knowledge: Partial<UazapiKnowledge>): Promise<UazapiKnowledge> {
+  async editKnowledge(instanceToken: string, knowledge: any): Promise<UazapiKnowledge> {
+    const payload = {
+      id: knowledge.id || '',
+      delete: false,
+      knowledge: {
+        ...knowledge
+      }
+    };
+    if (payload.knowledge.id) delete (payload.knowledge as any).id;
+
     return this.makeRequest<UazapiKnowledge>(
       '/knowledge/edit',
       'POST',
-      knowledge,
+      payload,
       instanceToken
     );
   }
@@ -275,11 +284,20 @@ export class UazapiChatbotService {
   }
 
   // Criar/Editar trigger
-  async editTrigger(instanceToken: string, trigger: Partial<UazapiTrigger>): Promise<UazapiTrigger> {
+  async editTrigger(instanceToken: string, trigger: any): Promise<UazapiTrigger> {
+    const payload = {
+      id: trigger.id || '',
+      delete: false,
+      trigger: {
+        ...trigger
+      }
+    };
+    if (payload.trigger.id) delete (payload.trigger as any).id;
+
     return this.makeRequest<UazapiTrigger>(
       '/trigger/edit',
       'POST',
-      trigger,
+      payload,
       instanceToken
     );
   }
@@ -309,11 +327,20 @@ export class UazapiChatbotService {
   }
 
   // Criar/Editar função
-  async editFunction(instanceToken: string, func: Partial<UazapiFunction>): Promise<UazapiFunction> {
+  async editFunction(instanceToken: string, func: any): Promise<UazapiFunction> {
+    const payload = {
+      id: func.id || '',
+      delete: false,
+      function: {
+        ...func
+      }
+    };
+    if (payload.function.id) delete (payload.function as any).id;
+
     return this.makeRequest<UazapiFunction>(
       '/function/edit',
       'POST',
-      func,
+      payload,
       instanceToken
     );
   }
@@ -493,6 +520,49 @@ export class UazapiChatbotService {
         })
         .eq('id', agentConfigId);
 
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  // Sincronizar trigger do Supabase para Uazapi
+  async syncTriggerToUazapi(agentConfigId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // 1. Buscar configuração do agente para pegar o instance token
+      const { data: agentConfig, error: fetchError } = await supabase
+        .from('uazapi_agent_configs')
+        .select(`
+          *,
+          whatsapp_instances(uazapi_token)
+        `)
+        .eq('id', agentConfigId)
+        .single();
+
+      if (fetchError || !agentConfig) {
+        throw new Error(`Agent config not found for trigger sync: ${fetchError?.message}`);
+      }
+
+      const instanceToken = agentConfig.whatsapp_instances?.uazapi_token;
+      if (!instanceToken) {
+        throw new Error('Instância de WhatsApp não vinculada.');
+      }
+
+      if (!agentConfig.uazapi_agent_id) {
+        throw new Error('Agente não sincronizado. Sincronize o robô primeiro.');
+      }
+
+      // 2. Preparar trigger (Padrão: Escutar tudo se ativo)
+      const uazapiTrigger: any = {
+        type: 'all',
+        agentId: agentConfig.uazapi_agent_id,
+        active: true,
+      };
+
+      // 3. Criar/atualizar trigger na Uazapi
+      await this.editTrigger(instanceToken, uazapiTrigger);
+
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return { success: false, error: errorMessage };
     }
   }
