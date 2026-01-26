@@ -18,6 +18,8 @@ export interface UazapiAgent {
   provider: 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom';
   model: string;
   apikey?: string;
+  apiUrl?: string; // Campo extra para provedores customizados
+  baseUrl?: string; // Alias comum para apiUrl
   openaikey?: string;
   basePrompt?: string;
   maxTokens?: number;
@@ -450,6 +452,12 @@ export class UazapiChatbotService {
         signMessages: false
       };
 
+      // Adicionar endpoint para OpenRouter/Provedores customizados
+      if (technicalSource.provider === 'openrouter') {
+        uazapiAgent.apiUrl = 'https://openrouter.ai/api/v1';
+        uazapiAgent.baseUrl = 'https://openrouter.ai/api/v1';
+      }
+
       if (agentConfig.uazapi_agent_id) {
         uazapiAgent.id = agentConfig.uazapi_agent_id;
       }
@@ -734,14 +742,14 @@ export class UazapiChatbotService {
   // Mapear provider do Supabase para formato Uazapi
   private mapProviderToUazapi(provider: string): 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom' {
     const providerMap: Record<string, 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom'> = {
-      'openrouter': 'openai', // Mapear para openai por compatibilidade de API (OpenRouter é compatível)
+      'openrouter': 'custom', // OpenRouter usa custom + apiUrl
       'openai': 'openai',
       'anthropic': 'anthropic',
       'gemini': 'gemini',
       'google': 'gemini',
       'deepseek': 'deepseek',
     };
-    return providerMap[provider.toLowerCase()] || 'openai';
+    return providerMap[provider.toLowerCase()] || 'custom';
   }
 
   // Registrar log de sincronização
