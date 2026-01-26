@@ -53,12 +53,18 @@ export interface UazapiKnowledge {
 
 export interface UazapiTrigger {
   id: string;
-  type: 'group' | 'contact' | 'all';
-  agentId: string;
-  groupJid?: string;
-  contactJid?: string;
-  keywords?: string[];
   active: boolean;
+  type: 'agent' | 'quickreply' | 'flow';
+  agent_id?: string;
+  flow_id?: string;
+  quickReply_id?: string;
+  wordsToStart?: string;
+  ignoreGroups?: boolean;
+  lead_field?: string;
+  lead_operator?: string;
+  lead_value?: string;
+  priority?: number;
+  responseDelay_seconds?: number;
   owner?: string;
   created?: string;
   updated?: string;
@@ -552,9 +558,12 @@ export class UazapiChatbotService {
 
       // 2. Preparar trigger (Padrão: Escutar tudo se ativo)
       const uazapiTrigger: any = {
-        type: 'all',
-        agentId: agentConfig.uazapi_agent_id,
         active: true,
+        type: 'agent',
+        agent_id: agentConfig.uazapi_agent_id,
+        ignoreGroups: true,
+        priority: 1,
+        wordsToStart: '.*' // Regex catch-all para responder a qualquer mensagem se o sistema suportar, ou deixar vazio/amplo
       };
 
       // 3. Criar/atualizar trigger na Uazapi

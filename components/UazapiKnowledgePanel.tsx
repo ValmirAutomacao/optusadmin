@@ -252,7 +252,7 @@ export function UazapiKnowledgePanel({
                                             }`}>
                                             {(item as any).is_vectorized ? '✅ Vetorizado' :
                                                 (item as any).sync_status === 'error' ? '❌ Erro' :
-                                                    (item as any).sync_status === 'pending_instance' ? '⏳ Aguardando WhatsApp' :
+                                                    (item as any).vector_status === 'processing' ? '⏳ Vetorizando...' :
                                                         '⏳ Pendente'}
                                         </span>
                                     </div>
