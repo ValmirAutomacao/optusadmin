@@ -18,7 +18,7 @@ export interface UazapiAgent {
   provider: 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom';
   model: string;
   apikey?: string;
-  openaiKey?: string;
+  openaikey?: string;
   basePrompt?: string;
   maxTokens?: number;
   temperature?: number; // 0-100
@@ -385,7 +385,7 @@ export class UazapiChatbotService {
         readMessages: true,
         typingDelay_seconds: 2,
         // Campo crítico para vetorização (RAG) na Uazapi
-        openaiKey: technicalSource.api_key_encrypted,
+        openaikey: technicalSource.api_key_encrypted,
       };
 
       // 4. Criar/atualizar agente na Uazapi
