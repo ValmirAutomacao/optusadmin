@@ -267,13 +267,27 @@ export class UazapiChatbotService {
     openai_base_url?: string;
     chatbot_enabled?: boolean;
     chatbot_ignoreGroups?: boolean;
-  }): Promise<void> {
-    await this.makeRequest(
+  }, tenantId?: string, agentConfigId?: string): Promise<void> {
+    const response = await this.makeRequest(
       '/instance/updatechatbotsettings',
       'POST',
       settings,
       instanceToken
     );
+
+    // Registrar log se tenantId for fornecido
+    if (tenantId) {
+      await this.logSync(
+        tenantId,
+        'update_instance_settings',
+        '/instance/updatechatbotsettings',
+        settings,
+        response,
+        'success',
+        null,
+        agentConfigId
+      );
+    }
   }
 
   // ========================================
