@@ -556,14 +556,14 @@ export class UazapiChatbotService {
         throw new Error('Agente não sincronizado. Sincronize o robô primeiro.');
       }
 
-      // 2. Preparar trigger (Padrão: Escutar tudo se ativo)
+      // 2. Preparar trigger (Padrão: Escutar saudações comuns se ativo)
       const uazapiTrigger: any = {
         active: true,
         type: 'agent',
         agent_id: agentConfig.uazapi_agent_id,
         ignoreGroups: true,
-        priority: 1,
-        wordsToStart: '.*' // Regex catch-all para responder a qualquer mensagem se o sistema suportar, ou deixar vazio/amplo
+        priority: 10, // Prioridade mais alta
+        wordsToStart: 'oi|ola|olá|bom dia|boa tarde|boa noite|ajuda|suporte|iniciar|menu|.*'
       };
 
       // 3. Criar/atualizar trigger na Uazapi
@@ -734,14 +734,14 @@ export class UazapiChatbotService {
   // Mapear provider do Supabase para formato Uazapi
   private mapProviderToUazapi(provider: string): 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom' {
     const providerMap: Record<string, 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'custom'> = {
-      'openrouter': 'custom', // OpenRouter usa custom + apikey
+      'openrouter': 'openai', // Mapear para openai por compatibilidade de API (OpenRouter é compatível)
       'openai': 'openai',
       'anthropic': 'anthropic',
       'gemini': 'gemini',
       'google': 'gemini',
       'deepseek': 'deepseek',
     };
-    return providerMap[provider.toLowerCase()] || 'custom';
+    return providerMap[provider.toLowerCase()] || 'openai';
   }
 
   // Registrar log de sincronização
