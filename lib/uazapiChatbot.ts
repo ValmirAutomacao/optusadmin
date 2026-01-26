@@ -429,7 +429,16 @@ export class UazapiChatbotService {
 
       const instanceToken = knowledge.uazapi_agent_configs?.whatsapp_instances?.uazapi_token;
       if (!instanceToken) {
-        throw new Error('Instância de WhatsApp não vinculada. Conecte um WhatsApp para sincronizar o conhecimento.');
+        // Marcamos como 'pending_instance' em vez de erro fatal para a UX ser melhor
+        await supabase
+          .from('uazapi_knowledge')
+          .update({
+            sync_status: 'pending_instance',
+            sync_error: 'Aguardando vinculação de WhatsApp para sincronizar.',
+          })
+          .eq('id', knowledgeId);
+
+        return { success: false, error: 'WhatsApp não vinculado' };
       }
 
       // 2. Preparar dados do conhecimento para Uazapi

@@ -247,11 +247,13 @@ export function UazapiKnowledgePanel({
                                         </span>
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${(item as any).is_vectorized ? 'bg-green-100 text-green-800' :
                                             (item as any).sync_status === 'error' ? 'bg-red-100 text-red-800' :
-                                                'bg-yellow-100 text-yellow-800'
+                                                (item as any).sync_status === 'pending_instance' ? 'bg-blue-100 text-blue-800' :
+                                                    'bg-yellow-100 text-yellow-800'
                                             }`}>
                                             {(item as any).is_vectorized ? '✅ Vetorizado' :
                                                 (item as any).sync_status === 'error' ? '❌ Erro' :
-                                                    '⏳ Pendente'}
+                                                    (item as any).sync_status === 'pending_instance' ? '⏳ Aguardando WhatsApp' :
+                                                        '⏳ Pendente'}
                                         </span>
                                     </div>
                                     <p className="text-sm text-gray-500 line-clamp-2">{item.content}</p>
