@@ -586,7 +586,15 @@ export class UazapiChatbotService {
       // 3. Criar/atualizar trigger na Uazapi
       const triggerResponse = await this.editTrigger(instanceToken, uazapiTrigger);
 
-      // 4. Log
+      // 4. Persistir o ID do trigger no banco de dados se for novo
+      if (!agentConfig.uazapi_trigger_id && triggerResponse.id) {
+        await supabase
+          .from('uazapi_agent_configs')
+          .update({ uazapi_trigger_id: triggerResponse.id })
+          .eq('id', agentConfigId);
+      }
+
+      // 5. Log
       await this.logSync(
         agentConfig.tenant_id,
         'sync_trigger',
