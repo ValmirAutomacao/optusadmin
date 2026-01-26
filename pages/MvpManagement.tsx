@@ -28,7 +28,7 @@ import { useSystemPrompts } from '../lib/systemPrompts';
 import { useAIAgents } from '../lib/aiAgents';
 import { UazapiKnowledgePanel } from '../components/UazapiKnowledgePanel';
 import Modal from '../components/ui/Modal';
-import { agentConfigService } from '../lib/uazapiChatbot';
+import { agentConfigService, uazapiChatbotService } from '../lib/uazapiChatbot';
 
 interface Tenant {
     id: string;
