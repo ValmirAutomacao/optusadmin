@@ -1090,6 +1090,8 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
                 .select('*, whatsapp_instances!instance_id(name, status, uazapi_token)')
                 .eq('tenant_id', tenant.id)
                 .eq('is_global', false)
+                .order('created_at', { ascending: false })
+                .limit(1)
                 .maybeSingle();
 
             if (error) {
@@ -1100,6 +1102,8 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
                     .select('*')
                     .eq('tenant_id', tenant.id)
                     .eq('is_global', false)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
                     .maybeSingle();
                 if (fallbackData) setConfig(fallbackData);
             } else {
