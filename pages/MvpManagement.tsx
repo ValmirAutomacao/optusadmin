@@ -1138,128 +1138,130 @@ function ChatbotTenantCard({ tenant }: { tenant: Tenant }) {
         } else {
             setShowKnowledge(true);
         }
-        async function handleSyncAll() {
-            if (!config?.id) return;
-            try {
-                setLoading(true);
-                // 1. Sincronizar Agente (Herda as configs globais de Modelo/API Key)
-                const agentResult = await uazapiChatbotService.syncAgentToUazapi(config.id);
-                if (!agentResult.success) throw new Error(agentResult.error);
+    }
 
-                // 2. Sincronizar Trigger (Garante que o robô escute as mensagens)
-                const triggerResult = await uazapiChatbotService.syncTriggerToUazapi(config.id);
-                if (!triggerResult.success) throw new Error(triggerResult.error);
+    async function handleSyncAll() {
+        if (!config?.id) return;
+        try {
+            setLoading(true);
+            // 1. Sincronizar Agente (Herda as configs globais de Modelo/API Key)
+            const agentResult = await uazapiChatbotService.syncAgentToUazapi(config.id);
+            if (!agentResult.success) throw new Error(agentResult.error);
 
-                // 3. Ativar no Supabase
-                await supabase
-                    .from('uazapi_agent_configs')
-                    .update({ is_active: true })
-                    .eq('id', config.id);
+            // 2. Sincronizar Trigger (Garante que o robô escute as mensagens)
+            const triggerResult = await uazapiChatbotService.syncTriggerToUazapi(config.id);
+            if (!triggerResult.success) throw new Error(triggerResult.error);
 
-                alert('✅ Robô Ativado e Sincronizado com configurações globais!');
-                loadAgentConfig();
-            } catch (err: any) {
-                alert(`Erro na sincronização: ${err.message}`);
-            } finally {
-                setLoading(false);
-            }
+            // 3. Ativar no Supabase
+            await supabase
+                .from('uazapi_agent_configs')
+                .update({ is_active: true })
+                .eq('id', config.id);
+
+            alert('✅ Robô Ativado e Sincronizado com configurações globais!');
+            loadAgentConfig();
+        } catch (err: any) {
+            alert(`Erro na sincronização: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
+    }
 
 
-        if (loading) return <div className="h-44 bg-slate-50 animate-pulse rounded-2xl border border-slate-100"></div>;
+    if (loading) return <div className="h-44 bg-slate-50 animate-pulse rounded-2xl border border-slate-100"></div>;
 
-        const instance = config?.whatsapp_instances;
-        const isSynced = config?.sync_status === 'synced' && config?.uazapi_agent_id;
+    const instance = config?.whatsapp_instances;
+    const isSynced = config?.sync_status === 'synced' && config?.uazapi_agent_id;
 
-        return (
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg transition-all group">
-                <div className="flex justify-between items-start mb-4">
+    return (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg transition-all group">
+            <div className="flex justify-between items-start mb-4">
+                <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors">{tenant.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                        {tenant.segment || 'Sem segmento'}
+                    </p>
+                </div>
+                <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${config?.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {config?.is_active ? '✅ Ativo' : '⚪ Inativo'}
+                </div>
+            </div>
+
+            <div className="space-y-2.5 mb-6 py-4 border-y border-slate-50">
+                <div className="flex items-center gap-3 text-sm text-slate-600">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${instance ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                        <span className="material-icons-round text-lg">link</span>
+                    </div>
                     <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors">{tenant.name}</h3>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                            {tenant.segment || 'Sem segmento'}
-                        </p>
-                    </div>
-                    <div className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${config?.is_active ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {config?.is_active ? '✅ Ativo' : '⚪ Inativo'}
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-none">WhatsApp</p>
+                        <p className="font-bold truncate">{instance?.name || 'Não vinculado'}</p>
                     </div>
                 </div>
-
-                <div className="space-y-2.5 mb-6 py-4 border-y border-slate-50">
-                    <div className="flex items-center gap-3 text-sm text-slate-600">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${instance ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-                            <span className="material-icons-round text-lg">link</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-none">WhatsApp</p>
-                            <p className="font-bold truncate">{instance?.name || 'Não vinculado'}</p>
-                        </div>
+                <div className="flex items-center gap-3 text-sm text-slate-600">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSynced ? 'bg-purple-50 text-purple-600' : 'bg-slate-50 text-slate-400'}`}>
+                        <span className="material-icons-round text-lg">psychology</span>
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-slate-600">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSynced ? 'bg-purple-50 text-purple-600' : 'bg-slate-50 text-slate-400'}`}>
-                            <span className="material-icons-round text-lg">psychology</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-none">Status Sincronização</p>
-                            <p className="font-bold truncate">{isSynced ? 'Sincronizado' : 'Requer Sincronização'}</p>
-                        </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter leading-none">Status Sincronização</p>
+                        <p className="font-bold truncate">{isSynced ? 'Sincronizado' : 'Requer Sincronização'}</p>
                     </div>
                 </div>
+            </div>
 
-                <div className="flex flex-col gap-2">
-                    <Button
-                        variant="primary"
-                        className="w-full !rounded-xl !py-4 shadow-md shadow-blue-500/10"
-                        icon="menu_book"
-                        onClick={handleOpenKnowledge}
-                    >
-                        Gerenciar Inteligência
-                    </Button>
+            <div className="flex flex-col gap-2">
+                <Button
+                    variant="primary"
+                    className="w-full !rounded-xl !py-4 shadow-md shadow-blue-500/10"
+                    icon="menu_book"
+                    onClick={handleOpenKnowledge}
+                >
+                    Gerenciar Inteligência
+                </Button>
 
-                    <Button
-                        variant="secondary"
-                        className={`w-full !rounded-xl ${!instance ? 'opacity-50' : ''}`}
-                        icon="sync_lock"
-                        onClick={handleSyncAll}
-                        disabled={!config?.id || !instance}
-                        loading={loading}
-                    >
-                        Ativar e Sincronizar Robô
-                    </Button>
+                <Button
+                    variant="secondary"
+                    className={`w-full !rounded-xl ${!instance ? 'opacity-50' : ''}`}
+                    icon="sync_lock"
+                    onClick={handleSyncAll}
+                    disabled={!config?.id || !instance}
+                    loading={loading}
+                >
+                    Ativar e Sincronizar Robô
+                </Button>
 
-                    {!instance && (
-                        <p className="text-[9px] text-amber-600 font-bold uppercase text-center mt-1">
-                            ⚠️ Vincule um WhatsApp primeiro
-                        </p>
+                {!instance && (
+                    <p className="text-[9px] text-amber-600 font-bold uppercase text-center mt-1">
+                        ⚠️ Vincule um WhatsApp primeiro
+                    </p>
+                )}
+            </div>
+
+            {/* Modal de Gestão de Conhecimento */}
+            <Modal
+                isOpen={showKnowledge}
+                onClose={() => setShowKnowledge(false)}
+                title={`Gestão de Inteligência: ${tenant.name}`}
+                size="xl"
+            >
+                <div className="p-1 space-y-4">
+                    {!isSynced && (
+                        <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center gap-3 text-amber-800 text-sm">
+                            <span className="material-icons-round text-amber-500">warning</span>
+                            <p>
+                                <strong>Atenção:</strong> Este robô ainda não foi sincronizado com as configurações globais.
+                                Ele não responderá mensagens até que você clique em <strong>"Ativar e Sincronizar Robô"</strong> no card da empresa.
+                            </p>
+                        </div>
+                    )}
+                    {config && (
+                        <UazapiKnowledgePanel
+                            agentConfigId={config.id}
+                            instanceToken={instance?.uazapi_token}
+                        />
                     )}
                 </div>
-
-                {/* Modal de Gestão de Conhecimento */}
-                <Modal
-                    isOpen={showKnowledge}
-                    onClose={() => setShowKnowledge(false)}
-                    title={`Gestão de Inteligência: ${tenant.name}`}
-                    size="xl"
-                >
-                    <div className="p-1 space-y-4">
-                        {!isSynced && (
-                            <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center gap-3 text-amber-800 text-sm">
-                                <span className="material-icons-round text-amber-500">warning</span>
-                                <p>
-                                    <strong>Atenção:</strong> Este robô ainda não foi sincronizado com as configurações globais.
-                                    Ele não responderá mensagens até que você clique em <strong>"Ativar e Sincronizar Robô"</strong> no card da empresa.
-                                </p>
-                            </div>
-                        )}
-                        {config && (
-                            <UazapiKnowledgePanel
-                                agentConfigId={config.id}
-                                instanceToken={instance?.uazapi_token}
-                            />
-                        )}
-                    </div>
-                </Modal>
-            </div>
-        );
-    }
+            </Modal>
+        </div>
+    );
+}
 
