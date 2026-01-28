@@ -14,6 +14,7 @@ import MvpManagement from '../pages/MvpManagement';
 import Conhecimento from '../pages/Conhecimento';
 import ManagerOnboarding from '../pages/ManagerOnboarding';
 import Leads from '../pages/Leads';
+import Especialidades from '../pages/Especialidades';
 
 const AppRoutes: React.FC = () => {
   const [isMobile, setIsMobile] = React.useState<boolean>(false);
@@ -81,6 +82,19 @@ const AppRoutes: React.FC = () => {
                   requiredRole={['developer', 'admin', 'secretaria']}
                 >
                   <Leads />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Especialidades - Acesso apenas para admin */}
+            <Route
+              path="/especialidades"
+              element={
+                <ProtectedRoute
+                  isMobile={isMobile}
+                  requiredRole={['developer', 'admin']}
+                >
+                  <Especialidades />
                 </ProtectedRoute>
               }
             />
