@@ -98,6 +98,8 @@ const Profissionais: React.FC = () => {
 
     if (!error && data) {
       setSchedules(data);
+    } else {
+      setSchedules([]);
     }
   };
 
